@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Catppuccin for GNOME. Run `./gattuccino --help`."""
+
+import os
+import sys
+
+# Works from a clone as is, also through a symlink (e.g. in ~/.local/bin)
+here = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(here, "src"))
+
+from gattuccino.cli import main  # noqa: E402
+
+sys.exit(main())

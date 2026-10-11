@@ -1,0 +1,11 @@
+{
+  "uuid": "floating-panel@gattuccino",
+  "name": "Floating Panel (Gattuccino)",
+  "description": "Companion to the Gattuccino shell theme. Lets the top bar float as a rounded bar, and docks it back to a normal full-width bar while a window is maximized or close to it. The look itself comes from the theme: with another theme this extension changes nothing.",
+  "shell-version": [
+    "48",
+    "49",
+    "50",
+    "51"
+  ]
+}
