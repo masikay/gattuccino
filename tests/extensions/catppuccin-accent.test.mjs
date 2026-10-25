@@ -3,7 +3,8 @@ import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
 import {
-    USER_THEME_DIR, environment, files, handlerCount, loaded, pickAccent, pickStyle, replaceTheme,
+    USER_THEME_DIR, environment, files, handlerCount, loadCalls, loaded, pendingIdle, pickAccent,
+    pickStyle, replaceTheme, resetLoadCalls, settle,
     settings, switchTheme, written,
 } from './catppuccin-accent.mocks.mjs';
 
@@ -15,6 +16,10 @@ const selectTheme = name => { settings['org.gnome.shell.extensions.user-theme'].
 const interfaceSettings = settings['org.gnome.desktop.interface'];
 const stylesheet = (name, themes = '/home/u/.themes') => `${themes}/${name}/gnome-shell/gnome-shell.css`;
 const dockSheet = (name, themes = '/home/u/.themes') => `${themes}/${name}/gnome-shell/gattuccino-dock.css`;
+
+// The extension loads the dock stylesheet from an idle call, so that loading it
+// does not re-enter the theme-changed handler that asked for it.
+const dockLoaded = () => { settle(); return loaded(); };
 const GTK4 = '/home/u/.config/gtk-4.0/gattuccino-accent.css';
 const GTK3 = '/home/u/.config/gtk-3.0/gattuccino-accent.css';
 const GTK4_CSS = '/home/u/.config/gtk-4.0/gtk.css';
@@ -204,41 +209,67 @@ test('catppuccin accent', async t => {
             for (const accent of VARIANTS) files.set(dockSheet(`gattuccino-${flavor}-${accent}`), '');
 
         switchTheme('gattuccino-mocha-teal');
-        assert.deepEqual(loaded(), [dockSheet('gattuccino-mocha-teal')]);
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-mocha-teal')]);
 
         // the accent and the style select another variant: its own stylesheet
         pickAccent('purple');
-        assert.deepEqual(loaded(), [dockSheet('gattuccino-mocha-mauve')]);
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-mocha-mauve')]);
         pickStyle('default');
-        assert.deepEqual(loaded(), [dockSheet('gattuccino-latte-mauve')]);
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-latte-mauve')]);
         pickStyle('prefer-dark');
 
         // a theme that is not ours, and one of ours built without the rules
         switchTheme('other-red');
-        assert.deepEqual(loaded(), []);
+        assert.deepEqual(dockLoaded(), []);
         files.delete(dockSheet('gattuccino-mocha-mauve'));
         switchTheme('gattuccino-mocha-mauve');
-        assert.deepEqual(loaded(), []);
+        assert.deepEqual(dockLoaded(), []);
         files.set(dockSheet('gattuccino-mocha-mauve'), '');
 
         // the stylesheets of a theme are dropped when GNOME Shell replaces it
         switchTheme('gattuccino-mocha-teal');
         replaceTheme();
-        assert.deepEqual(loaded(), [dockSheet('gattuccino-mocha-teal')]);
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-mocha-teal')]);
 
         // one that cannot be parsed leaves the rest of the extension working
         environment.failLoads = true;
         switchTheme('gattuccino-mocha-sky');
-        assert.deepEqual(loaded(), []);
+        assert.deepEqual(dockLoaded(), []);
         environment.failLoads = false;
         pickAccent('teal');
         assert.equal(theme(), 'gattuccino-mocha-teal');
-        assert.deepEqual(loaded(), [dockSheet('gattuccino-mocha-teal')]);
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-mocha-teal')]);
 
         // and one found in another theme folder
         files.set(dockSheet('gattuccino-mocha-sky', '/usr/share/themes'), '');
         switchTheme('gattuccino-mocha-sky');
-        assert.deepEqual(loaded(), [dockSheet('gattuccino-mocha-sky', '/usr/share/themes')]);
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-mocha-sky', '/usr/share/themes')]);
+    });
+
+    await t.test('loading the dock stylesheet does not send it round again', () => {
+        // Loading a stylesheet makes St say the theme changed, which is the
+        // signal that asks for the stylesheet: doing it inline recursed until
+        // the JS stack ran out, which is what unlocking the screen used to hit.
+        for (const accent of VARIANTS) files.set(dockSheet(`gattuccino-mocha-${accent}`), '');
+        switchTheme('gattuccino-mocha-teal');
+        settle();
+
+        resetLoadCalls();
+        replaceTheme();   // a new theme to fill, as a theme reload gives
+        assert.equal(pendingIdle(), 1, 'queued, not loaded inline');
+        settle();         // throws rather than hangs if it will not settle
+        assert.equal(loadCalls(), 1, 'loaded once, however often the theme says it changed');
+        assert.deepEqual(loaded(), [dockSheet('gattuccino-mocha-teal')]);
+        assert.equal(pendingIdle(), 0);
+
+        // a burst of theme changes, as unlocking sets off, collapses into one
+        resetLoadCalls();
+        for (let i = 0; i < 5; i++)
+            replaceTheme();
+        assert.equal(pendingIdle(), 1);
+        settle();
+        assert.equal(loadCalls(), 1);
+        assert.deepEqual(loaded(), [dockSheet('gattuccino-mocha-teal')]);
     });
 
     await t.test('disconnects on disable and reverts nothing', () => {
@@ -246,14 +277,14 @@ test('catppuccin accent', async t => {
         const before = [theme(), files.get(GTK4)];
         extension.disable();
         assert.equal(handlerCount(), 0);
-        assert.deepEqual(loaded(), []);   // except the stylesheet, which is loaded into the theme
+        assert.deepEqual(dockLoaded(), []);   // except the stylesheet, which is loaded into the theme
         assert.deepEqual([theme(), files.get(GTK4)], before);
         pickAccent('blue');
         pickStyle('default');
         assert.equal(theme(), 'gattuccino-mocha-yellow');
         extension.enable();
         assert.equal(theme(), 'gattuccino-latte-blue');
-        assert.deepEqual(loaded(), [dockSheet('gattuccino-latte-blue')]);
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-latte-blue')]);
         extension.disable();
         pickStyle('prefer-dark');
     });
@@ -272,7 +303,7 @@ test('catppuccin accent', async t => {
         pickAccent('red');
         assert.equal(theme(), 'gattuccino-mocha-teal');
         assert.ok(files.get(GTK4).includes('#f38ba8'));
-        assert.deepEqual(loaded(), []);   // which theme is selected is not known either
+        assert.deepEqual(dockLoaded(), []);   // which theme is selected is not known either
         extension.disable();
 
         environment.userThemes = 'user';   // installed, but its schemas are not compiled

@@ -148,6 +148,7 @@ export default class CatppuccinAccentExtension extends Extension {
         });
         this._userThemeSettings = this._getUserThemeSettings();
         this._dockStylesheet = null;
+        this._dockIdleId = 0;
 
         this._changedIds = ['accent-color', 'color-scheme'].map(key =>
             this._interfaceSettings.connect(`changed::${key}`, () => this._sync()));
@@ -155,9 +156,9 @@ export default class CatppuccinAccentExtension extends Extension {
         // selected, and GNOME Shell replaces the St theme whenever the theme
         // changes, which drops the stylesheets loaded into it.
         this._themeContext = St.ThemeContext.get_for_stage(global.stage);
-        this._themeChangedId = this._themeContext.connect('changed', () => this._syncDock());
+        this._themeChangedId = this._themeContext.connect('changed', () => this._queueDock());
         this._themeNameChangedId = this._userThemeSettings?.connect(
-            'changed::name', () => this._syncDock()) ?? 0;
+            'changed::name', () => this._queueDock()) ?? 0;
         this._sync();
     }
 
@@ -173,6 +174,10 @@ export default class CatppuccinAccentExtension extends Extension {
         this._themeNameChangedId = 0;
         this._themeContext.disconnect(this._themeChangedId);
         this._themeChangedId = 0;
+        if (this._dockIdleId) {
+            GLib.source_remove(this._dockIdleId);
+            this._dockIdleId = 0;
+        }
         this._unloadDock();
         this._themeContext = null;
         this._interfaceSettings = null;
@@ -186,7 +191,7 @@ export default class CatppuccinAccentExtension extends Extension {
 
         this._syncShellTheme(picked, dark);
         this._syncGtk(picked, dark);
-        this._syncDock();
+        this._queueDock();
     }
 
     // The settings of the User Themes extension, found the way the extension
@@ -256,6 +261,23 @@ export default class CatppuccinAccentExtension extends Extension {
         return null;
     }
 
+    // Loading a stylesheet into the theme makes St emit `changed` on the theme
+    // context, and that is the signal asking for the stylesheet in the first
+    // place: syncing inline re-enters _syncDock() from inside load_stylesheet().
+    // Unlocking the screen sets off a flurry of theme changes, and that nesting
+    // used to recurse until it exhausted the JS stack. An idle call breaks the
+    // nesting, and collapses the flurry into a single update.
+    _queueDock() {
+        if (this._dockIdleId)
+            return;
+
+        this._dockIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._dockIdleId = 0;
+            this._syncDock();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
     // Loads the accent rules for the dock that come with the selected theme,
     // and drops the ones loaded for another theme. Themes that are not ours,
     // and ours built without accent-selection, have no such file: nothing is
@@ -274,9 +296,12 @@ export default class CatppuccinAccentExtension extends Extension {
         if (!theme || !file)
             return;
         try {
-            theme.load_stylesheet(file);
+            // Recorded before loading: load_stylesheet() can come straight back
+            // here, and the check above is what has to stop it
             this._dockStylesheet = [theme, file];
+            theme.load_stylesheet(file);
         } catch (e) {
+            this._dockStylesheet = null;
             console.warn(`${this.uuid}: could not load ${file.get_path()}: ${e.message}`);
         }
     }
