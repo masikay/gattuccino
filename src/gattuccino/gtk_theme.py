@@ -220,28 +220,21 @@ GTK4_SELECTION = """
   background-color: color-mix(in srgb, var(--accent-bg-color) 32%, transparent);
 }
 
-/* A selected row of a GtkTreeView, named as the color it comes out as rather
- * than as a translucent one. GNOME tints a selected row with a quarter of the
- * accent over whatever is behind it, and GTK composites that when it paints.
- * Applications that ask GTK for the color instead of letting it paint, which
- * is what Chromium and the browsers built on it do to build a palette of
- * their own, read the quarter-transparent accent and drop the transparency:
- * the full accent then ends up behind their own text, with no contrast left.
- * Naming the composited color hands them what GTK would have painted, and
- * leaves what GTK paints exactly as it was. */
-treeview.view treeview.view.cell:selected,
-treeview.view treeview.view.cell:selected:focus {
-  background-color: color-mix(in srgb, var(--accent-bg-color) 25%, var(--view-bg-color));
-}
-
-/* Selected text, named the same way and for the same reason. GNOME tints it
- * with 30% of the accent while the text has the focus, and 10% of the text
- * color otherwise, both over whatever is behind. Since `window-bg-color` and
- * `view-bg-color` are both the flavor's `base`, naming the composited color
- * over `view-bg-color` is the color GNOME arrives at anywhere text can be
- * selected, and it is a color an application can read without losing it. */
+/* Selected text, in a color with no transparency in it. GNOME tints it with
+ * 30% of the accent over whatever is behind, and GTK composites that when it
+ * paints. Chromium, and the browsers built on it, do not let GTK paint: they
+ * ask it for the color and drop the transparency, which leaves the full accent
+ * behind their own text with no contrast. `window-bg-color` and `view-bg-color`
+ * are both the flavor's `base`, so the composited color named here is the one
+ * GNOME arrives at anywhere text can be selected.
+ *
+ * The color matters as much as the background: GNOME draws selected glyphs
+ * transparent and lets the text painted underneath show through the tint, so
+ * an opaque background on its own would cover the text instead of tinting it.
+ * `currentColor` draws them again in whatever color they already had. */
 selection {
   background-color: color-mix(in srgb, var(--view-fg-color) 10%, var(--view-bg-color));
+  color: currentColor;
 }
 
 selection:focus-within {
