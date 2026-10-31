@@ -98,6 +98,28 @@ class GtkThemeTest(unittest.TestCase):
                       "  background-color: color-mix(in srgb, var(--accent-bg-color) 20%, transparent);\n"
                       "}\n", gtk4)
 
+        # a selected treeview row is named opaque, for applications that read the
+        # color rather than let GTK paint it
+        self.assertIn("treeview.view treeview.view.cell:selected,\n"
+                      "treeview.view treeview.view.cell:selected:focus {\n"
+                      "  background-color: color-mix(in srgb, var(--accent-bg-color) 25%,"
+                      " var(--view-bg-color));\n"
+                      "}\n", gtk4)
+
+        # selected text likewise, focused and not
+        self.assertIn("selection {\n"
+                      "  background-color: color-mix(in srgb, var(--view-fg-color) 10%,"
+                      " var(--view-bg-color));\n"
+                      "}\n", gtk4)
+        self.assertIn("selection:focus-within {\n"
+                      "  background-color: color-mix(in srgb, var(--accent-bg-color) 30%,"
+                      " var(--view-bg-color));\n"
+                      "}\n", gtk4)
+        # nothing here sets a text color: the application owns it
+        for block in ("selection {", "selection:focus-within {"):
+            body = gtk4.split(block, 1)[1].split("}", 1)[0]
+            self.assertNotIn("color:", body.replace("background-color:", ""), block)
+
         # GTK 3 gets the hover and the menu items: no pseudo-class there matches
         # a selected row
         gtk3 = gtk_theme.gtk3_selection_css()

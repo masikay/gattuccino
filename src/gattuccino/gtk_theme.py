@@ -220,6 +220,34 @@ GTK4_SELECTION = """
   background-color: color-mix(in srgb, var(--accent-bg-color) 32%, transparent);
 }
 
+/* A selected row of a GtkTreeView, named as the color it comes out as rather
+ * than as a translucent one. GNOME tints a selected row with a quarter of the
+ * accent over whatever is behind it, and GTK composites that when it paints.
+ * Applications that ask GTK for the color instead of letting it paint, which
+ * is what Chromium and the browsers built on it do to build a palette of
+ * their own, read the quarter-transparent accent and drop the transparency:
+ * the full accent then ends up behind their own text, with no contrast left.
+ * Naming the composited color hands them what GTK would have painted, and
+ * leaves what GTK paints exactly as it was. */
+treeview.view treeview.view.cell:selected,
+treeview.view treeview.view.cell:selected:focus {
+  background-color: color-mix(in srgb, var(--accent-bg-color) 25%, var(--view-bg-color));
+}
+
+/* Selected text, named the same way and for the same reason. GNOME tints it
+ * with 30% of the accent while the text has the focus, and 10% of the text
+ * color otherwise, both over whatever is behind. Since `window-bg-color` and
+ * `view-bg-color` are both the flavor's `base`, naming the composited color
+ * over `view-bg-color` is the color GNOME arrives at anywhere text can be
+ * selected, and it is a color an application can read without losing it. */
+selection {
+  background-color: color-mix(in srgb, var(--view-fg-color) 10%, var(--view-bg-color));
+}
+
+selection:focus-within {
+  background-color: color-mix(in srgb, var(--accent-bg-color) 30%, var(--view-bg-color));
+}
+
 /* Menu items, with the tint of a hovered row rather than the accent itself:
  * the text of a menu is the application's to color, and some applications
  * (Chromium and the browsers built on it, for instance) keep their own on top
