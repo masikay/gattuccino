@@ -83,12 +83,8 @@ class ShellThemeTest(unittest.TestCase):
         accent, fg = palette.color("mocha", "teal"), palette.color("mocha", "base")
         r = rules(self.build(accent_selection=True))
 
-        # a highlighted menu item, and a selected tile, take the accent itself
-        self.assertEqual(r[".popup-menu-item:hover"], {"background-color": accent, "color": fg})
-        self.assertEqual(r[".popup-menu-item:selected"], {"background-color": accent, "color": fg})
+        # a selected tile takes the accent itself, with a text color to match
         self.assertEqual(r[".switcher-list .item-box:selected"], {"background-color": accent, "color": fg})
-        # an expanded submenu header is not a highlight, and stays neutral
-        self.assertNotEqual(r[".popup-menu-item:checked"].get("background-color"), accent)
 
         # everything that merely highlights gets a tint of it
         self.assertEqual(r[".calendar .calendar-day:hover"]["background-color"],
@@ -96,14 +92,21 @@ class ShellThemeTest(unittest.TestCase):
         self.assertEqual(r["#panel .panel-button:hover"]["box-shadow"],
                          "inset 0 0 0 100px rgba(148, 226, 213, 0.25)")
 
-        # and the text color is still readable on the solid accent
-        self.assertEqual(r[".popup-menu-item:hover"]["color"], fg)
+        # menu items among them, and they keep the shell's own text color: the
+        # accent itself left the text on top of it without contrast
+        for state, tint in (("hover", 20), ("selected", 20), ("active", 32)):
+            item = r[f".popup-menu-item:{state}"]
+            self.assertTrue(item["background-color"].startswith(f"st-mix({accent}, "), (state, item))
+            self.assertTrue(item["background-color"].endswith(f", {tint}%)"), (state, item))
+            self.assertEqual(item["color"], palette.color("mocha", "text"), state)
 
     def test_accent_selection_follows_the_flavor_and_the_accent(self):
         r = rules(self.build(flavor="latte", accent="mauve", accent_selection=True))
-        self.assertEqual(r[".popup-menu-item:hover"],
-                         {"background-color": palette.color("latte", "mauve"),
-                          "color": palette.color("latte", "base")})
+        mauve = palette.color("latte", "mauve")
+        self.assertTrue(r[".popup-menu-item:hover"]["background-color"].startswith(f"st-mix({mauve}, "))
+        self.assertEqual(r[".popup-menu-item:hover"]["color"], palette.color("latte", "text"))
+        self.assertEqual(r[".switcher-list .item-box:selected"],
+                         {"background-color": mauve, "color": palette.color("latte", "base")})
         self.assertEqual(r["#panel .panel-button:hover"]["box-shadow"],
                          "inset 0 0 0 100px rgba(136, 57, 239, 0.25)")
 

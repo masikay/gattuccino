@@ -138,16 +138,18 @@ Two strengths, so that a hover does not read as a second selection:
 
 | Drawn with | Where |
 |---|---|
-| The accent itself, with the flavor's `base` color on top | A selected sidebar row, the highlighted item in a menu, the selected window in the window switcher |
-| A tint of the accent: a fifth of it, or a third while pressed | A hovered row, overview icon, search result, calendar day, dock icon, quick settings button or top bar button |
+| The accent itself, with the flavor's `base` color on top | A selected sidebar row, the selected window in the window switcher |
+| A tint of the accent: a fifth of it, or a third while pressed | The item under the pointer or picked out by the keyboard in a menu, and a hovered row, overview icon, search result, calendar day, dock icon, quick settings button or top bar button |
+
+Only the two states that mean "this one" take the accent itself, because only there is the text ours to color with it. Everything else is tinted and keeps the text color it had. Menus in particular: their text belongs to the application, and some applications (Chromium and the browsers built on it, among them Brave) draw their own on top of whatever is behind it, which the accent itself left without contrast.
 
 In the dock of Dash to Dock the tint marks the application in focus as well as the icon under the pointer, and the windows and notification counters take the accent itself. See [Dash to Dock](#dash-to-dock) below.
 
 In applications this is a small stylesheet of its own, `gattuccino-selection.css`, in `~/.config/gtk-4.0` and `gtk-3.0`. This is the one place where the application colors are rules and not just colors. It names the accent through the variables of `gattuccino-accent.css` instead of spelling it out, so it keeps up with the accent on its own. The flavor files import it, not `gtk.css`: the `catppuccin-accent` extension therefore never touches it, and turning the preference on needs no logging out, only restarting the applications.
 
-In the Shell it is part of the theme, built from five more edits to GNOME's own stylesheet. Almost everything that highlights goes through one of three Sass mixins, so those edits reach the whole desktop; the window switcher colors its own selection and is changed separately. GNOME's own `st-mix` does the mixing when the Shell loads the theme, so a tint still composites over whatever is behind the widget, a translucent top bar included.
+In the Shell it is part of the theme, built from four more edits to GNOME's own stylesheet. Almost everything that highlights goes through one of its Sass mixins, so those edits reach the whole desktop, menus included; the window switcher colors its own selection and is changed separately. GNOME's own `st-mix` does the mixing when the Shell loads the theme, so a tint still composites over whatever is behind the widget, a translucent top bar included.
 
-Two things are deliberately left alone: an expanded submenu header, which marks a section rather than a highlight, and the parts that are not about selection at all, such as scrollbars and the red window-close button.
+Left deliberately alone: the parts that are not about selection at all, such as scrollbars and the red window-close button.
 
 One limit: in GTK 3 applications the *selected* row keeps its own color. GTK 3 has no way for a stylesheet to match a selected row, so only the hover and the menu items follow there.
 

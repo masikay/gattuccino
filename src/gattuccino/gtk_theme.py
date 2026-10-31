@@ -220,17 +220,18 @@ GTK4_SELECTION = """
   background-color: color-mix(in srgb, var(--accent-bg-color) 32%, transparent);
 }
 
-/* Menu items. Their check marks, radios and arrows inherit the color, so they
- * follow on their own. :selected is the keyboard-highlighted item. */
+/* Menu items, with the tint of a hovered row rather than the accent itself:
+ * the text of a menu is the application's to color, and some applications
+ * (Chromium and the browsers built on it, for instance) keep their own on top
+ * of whatever is behind it. A tint leaves their contrast alone.
+ * :selected is the keyboard-highlighted item. */
 popover.menu modelbutton:not(:disabled):hover,
 popover.menu modelbutton:not(:disabled):selected {
-  background-color: var(--accent-bg-color);
-  color: var(--accent-fg-color);
+  background-color: color-mix(in srgb, var(--accent-bg-color) 20%, transparent);
 }
 
 popover.menu modelbutton:not(:disabled):active {
-  background-color: color-mix(in srgb, var(--accent-fg-color) 22%, var(--accent-bg-color));
-  color: var(--accent-fg-color);
+  background-color: color-mix(in srgb, var(--accent-bg-color) 32%, transparent);
 }
 """
 
@@ -239,15 +240,23 @@ popover.menu modelbutton:not(:disabled):active {
 # selected row there keeps the plain sidebar color adw-gtk3 gives it. Hovering
 # is `:hover` in both, so that half works the same as in GTK 4.
 GTK3_SELECTION = """
-/* Menu items, of both kinds: GtkMenu, and the popovers that replaced it.
- * Their check marks and radios inherit the color, so they follow on their own. */
+/* Menu items, of both kinds: GtkMenu, and the popovers that replaced it. The
+ * tint of a hovered row, not the accent itself, so that the text an
+ * application draws on top of it keeps its contrast. */
 menu menuitem:hover,
 .menu menuitem:hover,
 .context-menu menuitem:hover,
 modelbutton.flat:hover,
 .menuitem.button.flat:hover {
-  background-color: @accent_bg_color;
-  color: @accent_fg_color;
+  background-color: alpha(@accent_bg_color, 0.2);
+}
+
+menu menuitem:active,
+.menu menuitem:active,
+.context-menu menuitem:active,
+modelbutton.flat:active,
+.menuitem.button.flat:active {
+  background-color: alpha(@accent_bg_color, 0.32);
 }
 
 /* Hovering a sidebar row: a light tint of the accent */
@@ -267,12 +276,12 @@ stacksidebar row.activatable:active {
 
 def gtk4_selection_css() -> str:
     return _selection_header("GTK 4 / libadwaita applications",
-                             "selected and hovered sidebar rows and highlighted menu items") + GTK4_SELECTION
+                             "selected sidebar rows, and hovered rows and menu items") + GTK4_SELECTION
 
 
 def gtk3_selection_css() -> str:
     return _selection_header("GTK 3 applications using the adw-gtk3 theme",
-                             "hovered sidebar rows and highlighted menu items") + GTK3_SELECTION
+                             "hovered sidebar rows and menu items") + GTK3_SELECTION
 
 
 def files(dark_flavor: str, dark: bool, accent: str, setting: str, selection: bool):

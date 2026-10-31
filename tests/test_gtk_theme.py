@@ -83,20 +83,30 @@ class GtkThemeTest(unittest.TestCase):
         gtk4 = gtk_theme.gtk4_selection_css()
         self.assertTrue(gtk4.startswith("/* gattuccino: selection\n"))
         self.assertIn(".navigation-sidebar row:selected,", gtk4)
-        self.assertIn("popover.menu modelbutton:not(:disabled):hover,", gtk4)
+        # only a selected row takes the accent itself, with a text color to match
         self.assertIn("background-color: var(--accent-bg-color);", gtk4)
         self.assertIn("color: var(--accent-fg-color);", gtk4)
         # hovering an unselected row only tints, and must not fight the selected rule
         self.assertIn(".navigation-sidebar row.activatable:not(:selected):hover,", gtk4)
         self.assertIn("background-color: color-mix(in srgb, var(--accent-bg-color) 20%, transparent);", gtk4)
 
-        # GTK 3 gets the menu items only: no pseudo-class there matches a selected row
+        # A menu item is tinted and keeps the text color the application gave it:
+        # some applications draw their own text over it, and the accent itself
+        # left them without contrast.
+        self.assertIn("popover.menu modelbutton:not(:disabled):hover,\n"
+                      "popover.menu modelbutton:not(:disabled):selected {\n"
+                      "  background-color: color-mix(in srgb, var(--accent-bg-color) 20%, transparent);\n"
+                      "}\n", gtk4)
+
+        # GTK 3 gets the hover and the menu items: no pseudo-class there matches
+        # a selected row
         gtk3 = gtk_theme.gtk3_selection_css()
         self.assertIn("menu menuitem:hover,", gtk3)
-        self.assertIn("background-color: @accent_bg_color;", gtk3)
         self.assertIn(".sidebar row.activatable:hover,", gtk3)
         self.assertIn("background-color: alpha(@accent_bg_color, 0.2);", gtk3)
         self.assertNotIn(":selected", gtk3)
+        # nothing in GTK 3 forces a text color either
+        self.assertNotIn("color: @accent_fg_color;", gtk3)
         # GTK 3 has no custom properties, GTK 4 no @define-color colors
         self.assertNotIn("--accent", gtk3)
         self.assertNotIn("@accent", gtk4)

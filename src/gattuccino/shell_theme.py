@@ -228,16 +228,16 @@ def _apply_accent(theme_src: str, flavor: str, accent: str):
 
 # The shell's counterpart of the accent-selection rules for applications.
 # GNOME draws every highlight here as a lightened or darkened shade of
-# whatever is behind it; these edits make that shade a tint of the accent, and
-# give the two states that mean "this one" (a highlighted menu item, a selected
-# tile) the accent itself.
+# whatever is behind it; these edits make that shade a tint of the accent
+# instead, and give the one state that means "this one", a selected tile, the
+# accent itself. Highlights stay tints so that the text on top of them keeps
+# the contrast GNOME gave it.
 #
-# Four edits to _drawing.scss cover nearly everything, because almost all of
-# the shell highlights through one of its three mixins; the window switcher
-# styles its own selection and needs a fifth. `st-mix` and
-# `st-transparentize` are GNOME Shell's own functions, resolved when it loads
-# the stylesheet, so an accent baked in here still composites over whatever is
-# behind the widget.
+# Three edits to _drawing.scss cover nearly everything, because almost all of
+# the shell highlights through one of its mixins; the window switcher styles
+# its own selection and needs a fourth. `st-mix` and `st-transparentize` are
+# GNOME Shell's own functions, resolved when it loads the stylesheet, so an
+# accent baked in here still composites over whatever is behind the widget.
 
 # How much accent a hovered and a pressed surface get, as a percentage
 HOVER_TINT = 20
@@ -247,23 +247,11 @@ ACTIVE_TINT = 32
 def _apply_accent_selection(sass_dir: str):
     drawing = f"{sass_dir}/_drawing.scss"
 
-    # 1. Menu items, the one place with both a hover and a keyboard-selected
-    #    state. `:active` stays ahead of `:hover` as in the original, so a
-    #    pressed item that is hovered still shows the hover color.
-    _replace_once(
-        drawing,
-        "  &:hover, &:selected, &:checked { @include button(hover, $c:$bg, $style: flat);}",
-        "  // gattuccino: the accent for the highlighted item\n"
-        "  &:hover, &:selected { background-color: $accent; color: $accent_fg;}\n"
-        f"  &:hover:active, &:selected:active {{ background-color: st-mix($accent_fg, $accent, {ACTIVE_TINT}%); "
-        "color: $accent_fg;}\n"
-        "  // an expanded submenu header stays neutral: it is not a highlight\n"
-        "  &:checked { @include button(hover, $c:$bg, $style: flat);}")
-
-    # 2. Every button, flat or raised: panel menu buttons, quick settings,
-    #    calendar days, overview tiles, search results, dialog lists, the dock.
-    #    The dialog, lockscreen and notification styles set these again further
-    #    down and so keep GNOME's own translucent shades.
+    # 1. Every button, flat or raised, which is also how menu items highlight:
+    #    panel menu buttons, quick settings, calendar days, overview tiles,
+    #    search results, dialog lists, the dock. The dialog, lockscreen and
+    #    notification styles set these again further down and so keep GNOME's
+    #    own translucent shades.
     _replace_once(
         drawing,
         "  $hover_button_bg_color: if($variant == 'light', st-darken($button_bg_color, $hover_factor), "
@@ -274,7 +262,7 @@ def _apply_accent_selection(sass_dir: str):
         f"  $hover_button_bg_color: st-mix($accent, $button_bg_color, {HOVER_TINT}%);\n"
         f"  $active_button_bg_color: st-mix($accent, $button_bg_color, {ACTIVE_TINT}%);")
 
-    # 3. A selected or highlighted tile takes the accent itself: the window
+    # 2. A selected or highlighted tile takes the accent itself: the window
     #    switcher's current window, and highlighted icons in the app grid.
     #    Both branches of the mixin, raised and flat.
     for extra in ("", "$style: flat, "):
@@ -286,7 +274,7 @@ def _apply_accent_selection(sass_dir: str):
             "    &:highlighted,&:selected,\n"
             "    &:checked { background-color: $accent; color: $accent_fg;}")
 
-    # 4. The top bar, which mixes its own translucent fills rather than going
+    # 3. The top bar, which mixes its own translucent fills rather than going
     #    through button(). Translucent so a translucent panel stays so.
     _replace_once(
         drawing,
@@ -298,7 +286,7 @@ def _apply_accent_selection(sass_dir: str):
         "  $active_fill:       transparentize($accent, .6);\n"
         "  $active_hover_fill: transparentize($accent, .55);")
 
-    # 5. The window switcher brightens its selected window itself, after the
+    # 4. The window switcher brightens its selected window itself, after the
     #    tile mixin has run, so it needs saying again here.
     _replace_once(
         f"{sass_dir}/widgets/_switcher-popup.scss",
