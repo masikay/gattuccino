@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+
 // Stand-ins for the parts of GNOME Shell the blur extension uses: enough of an
 // actor tree, of theme nodes and of effects to place a backdrop and to say what
 // should be blurred.
@@ -11,26 +13,27 @@ class Emitter {
 }
 
 export const state = {
-    // What a theme node answers: the blur properties, the background alpha and
-    // the corner radii of the surface.
-    theme: {radius: 32, brightness: 1.12, alpha: 204, corners: [16, 16, 16, 16]},
+    // What a theme node answers: the blur properties, the background alpha, the
+    // corner radii of the surface and the width of its border.
+    theme: {radius: 32, brightness: 1.12, alpha: 204, corners: [16, 16, 16, 16], border: 0},
 };
 
-export class ThemeNode {
-    constructor(actor) { this._actor = actor; }
+class ThemeNode {
+    constructor(actor) { this._theme = actor.theme ?? state.theme; }
     lookup_length(name) {
-        const {radius} = this._actor.theme ?? state.theme;
+        const {radius} = this._theme;
         return name === '-gattuccino-blur-radius' && radius != null ? [true, radius] : [false, 0];
     }
     lookup_double(name) {
-        const {brightness} = this._actor.theme ?? state.theme;
+        const {brightness} = this._theme;
         return name === '-gattuccino-blur-brightness' && brightness != null ? [true, brightness] : [false, 0];
     }
-    get_background_color() { return {alpha: (this._actor.theme ?? state.theme).alpha}; }
-    get_border_radius(corner) { return (this._actor.theme ?? state.theme).corners[corner]; }
+    get_background_color() { return {alpha: this._theme.alpha}; }
+    get_border_radius(corner) { return this._theme.corners[corner]; }
+    get_border_width() { return this._theme.border; }
 }
 
-export class Binding {
+class Binding {
     constructor(source, sourceProperty, target, targetProperty) {
         Object.assign(this, {source, sourceProperty, target, targetProperty, bound: true});
         this.sync();
@@ -47,7 +50,7 @@ export class Actor extends Emitter {
             x: 0, y: 0, width: 0, height: 0, translation_x: 0, translation_y: 0,
             opacity: 255, visible: true, mapped: true, scale_x: 1, scale_y: 1,
             pivot_point: {x: 0, y: 0}, style_class: '', name: '',
-            destroyed: false,
+            allocated: true, destroyed: false,
         }, properties);
         this._children = [];
         this._parent = null;
@@ -80,13 +83,32 @@ export class Actor extends Emitter {
     }
     get_parent() { return this._parent; }
     get_children() { return [...this._children]; }
-    destroy() { this.destroyed = true; this._parent?.remove_child(this); }
 
-    set_position(x, y) { this.x = x; this.y = y; this._notifyMoved(); }
-    set_size(width, height) { this.width = width; this.height = height; this._notifyMoved(); }
+    /**
+     * As in the Shell: the actor says it is going, and is then taken out of its
+     * parent. Anything touched after this throws, the way GJS refuses to let a
+     * disposed object be used.
+     */
+    destroy() {
+        if (this.destroyed) return;
+        for (const child of this.get_children()) child.destroy();
+        this.emit('destroy');
+        this.destroyed = true;
+        const parent = this._parent;
+        this._parent = null;
+        if (parent) {
+            parent._children = parent._children.filter(c => c !== this);
+            parent.emit('child-removed', this);
+        }
+        this._disposed = true;
+    }
+    _check() { if (this._disposed) throw new Error(`${this.name || this.style_class || 'actor'} has been already disposed`); }
+
+    set_position(x, y) { this._check(); this.x = x; this.y = y; this._notifyMoved(); }
+    set_size(width, height) { this._check(); this.width = width; this.height = height; this._notifyMoved(); }
     set_pivot_point(x, y) { this.pivot_point = {x, y}; }
     get_size() { return [this.width, this.height]; }
-    /** What the actor was last given, which is what the extension reads. */
+    has_allocation() { return this.allocated; }
     get_allocation_box() {
         const [x, y, width, height] = [this.x, this.y, this.width, this.height];
         return {x1: x, y1: y, x2: x + width, y2: y + height, get_width: () => width, get_height: () => height};
@@ -101,6 +123,7 @@ export class Actor extends Emitter {
 
     has_style_class_name(name) { return this.style_class.split(' ').includes(name); }
     get_theme_node() {
+        this._check();
         if (!this.mapped) throw new Error('get_theme_node() while unmapped');
         return new ThemeNode(this);
     }
@@ -125,6 +148,10 @@ export class Actor extends Emitter {
         this.emit('notify::allocation');
         this.emit('notify::x');
     }
+
+    /** Connecting and disconnecting go through the disposal check too. */
+    connect(signal, callback) { this._check(); return super.connect(signal, callback); }
+    disconnect(id) { this._check(); super.disconnect(id); }
 }
 
 export class Clone extends Actor {
@@ -147,22 +174,21 @@ class BlurEffect {
     set(properties) { Object.assign(this, properties); }
 }
 
-const idle = new Map();
-let idleNext = 0;
-export const GLib = {
-    PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false,
-    idle_add(_priority, callback) { const id = ++idleNext; idle.set(id, callback); return id; },
-    source_remove(id) { if (!idle.delete(id)) throw new Error('unknown source'); },
-};
-export const pendingIdle = () => idle.size;
-export function settle() { while (idle.size) for (const [id, callback] of [...idle]) { idle.delete(id); callback(); } }
+// Work queued for the end of the frame
+const laters = new Map();
+let laterNext = 0;
+export const pendingLaters = () => laters.size;
+export function settle() { while (laters.size) for (const [id, callback] of [...laters]) { laters.delete(id); callback(); } }
 
+export const GLib = {PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false};
 export const Clutter = {Clone, ShaderEffect};
 export const Cogl = {SnippetHook: {FRAGMENT: 2048}, Snippet: {new: (hook, declarations, post) => ({hook, declarations, post})}};
 export const Shell = {BlurEffect, BlurMode: {ACTOR: 0, BACKGROUND: 1}};
+export const Meta = {BackgroundGroup: class BackgroundGroup extends Actor {}, LaterType: {BEFORE_REDRAW: 4}};
 export const St = {
     Widget: Actor,
     Corner: {TOPLEFT: 0, TOPRIGHT: 1, BOTTOMRIGHT: 2, BOTTOMLEFT: 3},
+    Side: {TOP: 0, RIGHT: 1, BOTTOM: 2, LEFT: 3},
 };
 export const GObject = {
     registerClass: (meta, klass) => klass ?? meta,
@@ -175,27 +201,51 @@ export const GObject = {
     },
 };
 
+export const backgrounds = [];
+export const Background = {
+    BackgroundManager: class BackgroundManager {
+        constructor({container, monitorIndex}) {
+            Object.assign(this, {container, monitorIndex, alive: true});
+            backgrounds.push(this);
+        }
+        destroy() { this.alive = false; }
+    },
+};
+
 export const Main = {
     panel: null,
-    layoutManager: {uiGroup: null, panelBox: null, overviewGroup: null},
+    layoutManager: null,
 };
 export class Extension {}
 
-/** A desktop to blur: the UI group with a top bar in it. */
+/** A desktop to blur: the UI group with a top bar and an overview in it. */
 export function desktop() {
+    backgrounds.length = 0;
     const uiGroup = new Actor({name: 'uiGroup', width: 1600, height: 900});
+    const windowGroup = new Actor({name: 'windowGroup', width: 1600, height: 900});
     const panelBox = new Actor({name: 'panelBox', width: 1600, height: 38});
     const panel = new Actor({name: 'panel', x: 6, y: 6, width: 1588, height: 32});
     const overviewGroup = new Actor({name: 'overviewGroup', width: 1600, height: 900, visible: false, mapped: false});
     panelBox.add_child(panel);
+    uiGroup.add_child(windowGroup);
     uiGroup.add_child(overviewGroup);
     uiGroup.add_child(panelBox);
+
     Main.panel = panel;
-    Main.layoutManager.uiGroup = uiGroup;
-    Main.layoutManager.panelBox = panelBox;
-    Main.layoutManager.overviewGroup = overviewGroup;
-    globalThis.global = {window_group: new Actor({name: 'windowGroup'})};
-    return {uiGroup, panelBox, panel, overviewGroup};
+    Main.layoutManager = Object.assign(new Emitter(), {
+        uiGroup, panelBox, overviewGroup,
+        monitors: [{index: 0, x: 0, y: 0, width: 1600, height: 900}],
+    });
+    globalThis.global = {
+        window_group: windowGroup,
+        compositor: {
+            get_laters: () => ({
+                add(_type, callback) { const id = ++laterNext; laters.set(id, callback); return id; },
+                remove(id) { laters.delete(id); },
+            }),
+        },
+    };
+    return {uiGroup, windowGroup, panelBox, panel, overviewGroup};
 }
 
 /** A menu: content in a bin in a box pointer, the way the Shell builds one. */
@@ -214,3 +264,4 @@ export function menu({x = 100, y = 40, width = 400, height = 300, wrapped = fals
 }
 
 export const backdropsIn = actor => actor.get_children().filter(child => child.name === 'gattuccino-blur');
+export {assert};

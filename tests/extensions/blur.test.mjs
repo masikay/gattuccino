@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
-import {Actor, Main, backdropsIn, desktop, menu, settle, state} from './blur.mocks.mjs';
+import {Actor, Main, backdropsIn, backgrounds, desktop, menu, settle, state} from './blur.mocks.mjs';
 
 const Blur = await loadExtension('blur@gattuccino', 'blur.mocks.mjs');
 
-const THEME = {radius: 32, brightness: 1.12, alpha: 204, corners: [16, 16, 16, 16]};
+const THEME = {radius: 32, brightness: 1.12, alpha: 204, corners: [16, 16, 16, 16], border: 0};
 const reset = () => { state.theme = {...THEME}; };
 
 /** The backdrop the extension put right behind `anchor`, if any. */
@@ -192,7 +192,7 @@ test('menus', async t => {
         assert.equal(after, raised - 1);
     });
 
-    await t.test('take their blur away with them when they are destroyed', () => {
+    await t.test('take their blur away with them when they are taken out', () => {
         const {top, pointer} = menu();
         uiGroup.add_child(top);
         const backdrop = backdropOf(pointer);
@@ -201,6 +201,25 @@ test('menus', async t => {
         uiGroup.remove_child(top);
         assert.equal(backdrop.destroyed, true);
         assert.equal(pointer.handlerCount, 0);
+    });
+
+    // A menu that has been destroyed cannot be touched again at all, not even
+    // to disconnect from it: the blur has to be taken down while it is still
+    // alive, which is what its 'destroy' says.
+    await t.test('take their blur away with them when they are destroyed', () => {
+        const {top, pointer} = menu();
+        uiGroup.add_child(top);
+        const backdrop = backdropOf(pointer);
+        assert.ok(backdrop);
+
+        top.destroy();   // throws if anything of it is used afterwards
+        assert.equal(backdrop.destroyed, true);
+
+        // and the menu is forgotten, so that nothing reaches for it later: this
+        // is what used to throw, once per menu, for the rest of the session
+        const other = new Actor({name: 'later'});
+        uiGroup.add_child(other);
+        uiGroup.remove_child(other);
     });
 
     extension.disable();
@@ -229,12 +248,71 @@ test('the overview', async t => {
         assert.equal(backdrop.get_effect('blur').radius, 32);
     });
 
+    await t.test('waits for a size before it is shown at all', () => {
+        overviewGroup.set({visible: false});
+        overviewGroup.allocated = false;
+        overviewGroup.set({visible: true});
+        assert.equal(backdrop.visible, false, 'shown before it had an allocation');
+
+        overviewGroup.allocated = true;
+        overviewGroup.emit('notify::allocation');
+        assert.equal(backdrop.visible, true);
+    });
+
     await t.test('goes away with it', () => {
         overviewGroup.set({visible: false});
         assert.equal(backdrop.visible, false);
     });
 
     extension.disable();
+});
+
+test('a copy of the desktop', async t => {
+    reset();
+    const {uiGroup, windowGroup, panelBox, overviewGroup} = desktop();
+    const extension = new Blur();
+    extension.enable();
+    const siblings = () => uiGroup.get_children();
+    const bar = siblings()[siblings().indexOf(panelBox) - 1];
+    const overview = siblings()[siblings().indexOf(overviewGroup) - 1];
+
+    await t.test('is not drawn while the desktop itself is not', () => {
+        assert.equal(bar.visible, true);
+
+        // What the Shell does while the overview is open
+        windowGroup.set({mapped: false});
+        assert.equal(bar.visible, false);
+
+        windowGroup.set({mapped: true});
+        assert.equal(bar.visible, true);
+    });
+
+    await t.test('is not what the overview uses: it has a wallpaper of its own', () => {
+        assert.equal(overview.get_children()[0].source, undefined);
+        assert.equal(backgrounds.filter(b => b.alive).length, 1);   // one monitor, one wallpaper
+
+        // which is why the overview keeps its blur while the desktop is hidden
+        windowGroup.set({mapped: false});
+        overviewGroup.mapped = true;
+        overviewGroup.emit('notify::mapped');
+        overviewGroup.set({visible: true});
+        assert.equal(overview.visible, true);
+        windowGroup.set({mapped: true});
+    });
+
+    await t.test('follows the monitors when they change', () => {
+        Main.layoutManager.monitors = [
+            {index: 0, x: 0, y: 0, width: 1600, height: 900},
+            {index: 1, x: 1600, y: 0, width: 1280, height: 1024},
+        ];
+        Main.layoutManager.emit('monitors-changed');
+        assert.equal(backgrounds.filter(b => b.alive).length, 2);
+    });
+
+    await t.test('is given up on disable', () => {
+        extension.disable();
+        assert.equal(backgrounds.filter(b => b.alive).length, 0);
+    });
 });
 
 test('the dock', async t => {
