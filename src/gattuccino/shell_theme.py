@@ -27,6 +27,22 @@ MARKER = ".gattuccino"
 LEGACY_MARKERS = (".gnome-catppuccin",)
 
 
+# Blur: how the two kinds of glass differ. Frosted glass scatters the light it
+# lets through, so it is milkier and brighter than plain glass; the blur itself
+# is as strong in both (the blur_radius option).
+NO_BLUR = "no"
+PLAIN_BLUR = "plain"
+FROSTED_BLUR = "frosted"
+FROSTED_BRIGHTNESS = 1.12   # of the blurred copy, 1 leaves it as it is
+FROSTED_WHITE = 10          # percent of white mixed into the surface color
+# The overview, which GNOME fills with a solid color, becomes glass as well when
+# there is blur: it is a whole screen rather than a bar, so it takes more blur
+# than the other surfaces, and enough color to keep the labels on it readable.
+OVERVIEW_OPACITY = 0.6
+OVERVIEW_BLUR = 2           # times the blur radius of the other surfaces
+OVERVIEW_DIM = 0.8          # of the brightness of the other surfaces, to keep labels legible
+
+
 class BuildError(Exception):
     pass
 
@@ -41,6 +57,8 @@ class ShellOptions:
     docked_panel_opacity: Optional[float] = None  # None: same as the panel
     dock_like_panel: bool = False
     accent_selection: bool = False
+    blur: str = NO_BLUR                      # no, plain or frosted
+    blur_radius: int = 32
 
 
 def theme_name(flavor: str, accent: str) -> str:
@@ -305,16 +323,28 @@ def _transparent(color: str, opacity: float) -> str:
     return f"transparentize({color}, {round(1 - opacity, 4):g})"
 
 
-def _apply_panel_opacity(sass_dir: str, opacity: float):
+def _surface(color: str, opacity: float, options: "ShellOptions") -> str:
+    """The color of a surface the desktop shows through.
+
+    Frosted glass is milky, so a little white goes into it. An opaque surface
+    is left alone: nothing is blurred behind it, so there is no glass to frost.
+    """
+    if options.blur == FROSTED_BLUR and opacity < 1:
+        color = f"mix(white, {color}, {FROSTED_WHITE}%)"
+    return _transparent(color, opacity)
+
+
+def _apply_panel_opacity(sass_dir: str, options: "ShellOptions"):
     # The panel is already transparent in the overview and on the lock screen
     _replace_once(f"{sass_dir}/widgets/_panel.scss", "background-color: $panel_bg_color;",
-                  f"background-color: {_transparent('$panel_bg_color', opacity)};")
+                  f"background-color: {_surface('$panel_bg_color', options.panel_opacity, options)};")
 
 
-def _apply_popup_opacity(sass_dir: str, opacity: float):
+def _apply_popup_opacity(sass_dir: str, options: "ShellOptions"):
+    opacity = options.popup_opacity
     # Background shared by panel menus, quick settings, the calendar and right-click menus
     _replace_once(f"{sass_dir}/widgets/_popovers.scss", "background-color: $bg_color;",
-                  f"background-color: {_transparent('$bg_color', opacity)};")
+                  f"background-color: {_surface('$bg_color', opacity, options)};")
 
     # Flat buttons (calendar days, icon buttons...) are painted in the color of
     # whatever is behind them, which shows as solid patches on a translucent
@@ -351,7 +381,7 @@ def _apply_floating_panel(sass_dir: str, options: ShellOptions):
         style += f"""
 // Docked panel: a window is maximized or close (class set by the floating-panel extension)
 #panel.docked-panel {{
-  background-color: {_transparent('$panel_bg_color', options.docked_panel_opacity)};
+  background-color: {_surface('$panel_bg_color', options.docked_panel_opacity, options)};
 
   // the overview keeps its transparent panel
   &:overview {{ background-color: transparent; }}
@@ -359,6 +389,50 @@ def _apply_floating_panel(sass_dir: str, options: ShellOptions):
 """
     with open(f"{sass_dir}/widgets/_panel.scss", "a", encoding="utf-8") as f:
         f.write(style)
+
+
+def _apply_blur(sass_dir: str, options: ShellOptions):
+    """Ask the blur extension to blur what is behind the translucent surfaces.
+
+    A stylesheet cannot blur anything: all a theme can do is say what it would
+    like blurred. These two properties are of this project's own making, which
+    is what the leading dash is for; GNOME Shell keeps them on the surface's
+    theme node, where the blur extension reads them. Without that extension
+    they do nothing at all.
+
+    The extension leaves a surface alone while it is not translucent, so these
+    can be stated once and for all: the bar in the overview, or a solid docked
+    bar, has nothing to show through it and is not blurred.
+    """
+    surfaces = [
+        ("#panel", options.blur_radius, 1),               # the top bar, floating or docked
+        (".popup-menu-content", options.blur_radius, 1),  # panel menus, quick settings, the calendar
+        # A whole screen of blur takes more of it, and a little dimming so that
+        # the names under the application icons stay legible over a bright one
+        ("#overviewGroup", options.blur_radius * OVERVIEW_BLUR, OVERVIEW_DIM),
+    ]
+    if options.dock_like_panel:
+        surfaces.append(("#dashtodockContainer #dash .dash-background", options.blur_radius, 1))
+
+    # GNOME fills the overview with a solid color: make it glass, so that there
+    # is something to blur behind it. Everything else is translucent already,
+    # by the opacity preferences.
+    _replace_once(f"{sass_dir}/widgets/_overview.scss", "background-color: $system_base_color;",
+                  f"background-color: {_surface('$system_base_color', OVERVIEW_OPACITY, options)};")
+
+    brightness = FROSTED_BRIGHTNESS if options.blur == FROSTED_BLUR else 1
+    rules = "".join(f"""
+{surface} {{
+  -gattuccino-blur-radius: {radius}px;
+  -gattuccino-blur-brightness: {round(brightness * dim, 4):g};
+}}""" for surface, radius, dim in surfaces)
+
+    # Last of all the widgets, so that nothing of GNOME's own can come after it
+    with open(f"{sass_dir}/_widgets.scss", "a", encoding="utf-8") as f:
+        f.write(f"""
+// Blur behind the surfaces the desktop shows through. Read by the Gattuccino
+// blur extension, ignored by everything else.{rules}
+""")
 
 
 def _apply_dock(sass_dir: str, options: ShellOptions):
@@ -377,7 +451,7 @@ def _apply_dock(sass_dir: str, options: ShellOptions):
 
     background = "$panel_bg_color"
     if options.panel_opacity is not None:
-        background = _transparent(background, options.panel_opacity)
+        background = _surface(background, options.panel_opacity, options)
     _write(path, text + f"""
 // Dock of Dash to Dock and Ubuntu Dock: the color and opacity of the top bar.
 // The extension's own stylesheet outranks any theme, and keeps its say on the
@@ -491,13 +565,15 @@ def build_css(source_theme_dir: str, flavor: str, accent: str, options: ShellOpt
         if options.accent_selection:
             _apply_accent_selection(sass_dir)
         if options.panel_opacity is not None:
-            _apply_panel_opacity(sass_dir, options.panel_opacity)
+            _apply_panel_opacity(sass_dir, options)
         if options.popup_opacity is not None:
-            _apply_popup_opacity(sass_dir, options.popup_opacity)
+            _apply_popup_opacity(sass_dir, options)
         if options.floating_panel:
             _apply_floating_panel(sass_dir, options)
         if options.dock_like_panel:
             _apply_dock(sass_dir, options)
+        if options.blur != NO_BLUR:
+            _apply_blur(sass_dir, options)
 
         variant = "dark" if palette.DARK[flavor] else "light"
         return compile_scss(f"{theme_src}/gnome-shell-{variant}.scss")

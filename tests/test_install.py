@@ -9,6 +9,7 @@ from .support import SHELL_VERSION, USER_THEME_UUID, FakeHome, test_sources
 
 SOURCES = test_sources()
 FLOATING = "floating-panel@gattuccino"
+BLUR = "blur@gattuccino"
 ACCENT = "catppuccin-accent@gattuccino"
 INTERFACE, SHELL, USER_THEME = "org.gnome.desktop.interface", "org.gnome.shell", "org.gnome.shell.extensions.user-theme"
 
@@ -40,7 +41,7 @@ class InstallTest(unittest.TestCase):
         home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
         out = home.ok("configure", "--flavor", "mocha", "--accent", "follow", "--popup-opacity", "0.8",
                       "--panel-opacity", "0.7", "--floating-panel", "--docked-panel-opacity", "1",
-                      "--dock-like-panel", "--flatpak", "--apply")
+                      "--dock-like-panel", "--blur", "frosted", "--blur-radius", "24", "--flatpak", "--apply")
         self.assertEqual(self.themes(), sorted(f"gattuccino-{f}-{a}" for f in ("latte", "mocha")
                                                for a in palette.SETTINGS_ACCENTS.values()))
         self.assertIn(palette.color("latte", "mauve"),
@@ -50,7 +51,8 @@ class InstallTest(unittest.TestCase):
         self.assertIn("#panel.floating-panel", css)
         self.assertIn("#panel.docked-panel", css)
         self.assertIn("#dashtodockContainer #dash .dash-background", css)
-        self.assertIn("rgba(30, 30, 46, 0.8)", css)
+        self.assertIn("-gattuccino-blur-radius: 24px", css)   # read by the blur extension
+        self.assertIn("rgba(53, 53, 67, 0.8)", css)   # the popups, milky with the frosted glass
         self.assertNotIn("st-accent", css)
         self.assertIn(SHELL_VERSION, home.read(f"{home.themes}/gattuccino-mocha-mauve/{shell_theme.MARKER}"))
         self.assertEqual(home.settings(USER_THEME, "name"), "gattuccino-mocha-teal")
@@ -72,7 +74,7 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(home.read(home.flatpak_file).splitlines()[1],
                          "filesystems=~/Games;xdg-config/gtk-4.0:ro;xdg-config/gtk-3.0:ro;")
 
-        for uuid in (FLOATING, ACCENT):
+        for uuid in (FLOATING, BLUR, ACCENT):
             self.assertTrue(os.path.exists(f"{home.extensions}/{uuid}/extension.js"))
             self.assertIn(uuid, home.settings(SHELL, "enabled-extensions"))   # for the next login
         self.assertIn("Log out and back in", out)
@@ -93,7 +95,7 @@ class InstallTest(unittest.TestCase):
         # --- Light style in Settings: Latte; Frappe for the dark style, one fixed accent, no floating bar ---
         home.set_setting(INTERFACE, "color-scheme", "default")
         home.ok("configure", "--flavor", "frappe", "--accent", "peach", "--no-floating-panel",
-                "--no-dock-like-panel", "--apply")
+                "--no-dock-like-panel", "--blur", "no", "--apply")
         self.assertEqual(self.themes(), ["gattuccino-frappe-peach", "gattuccino-latte-peach"])
         self.assertEqual(home.settings(USER_THEME, "name"), "gattuccino-latte-peach")
         css = home.read(f"{home.themes}/gattuccino-latte-peach/gnome-shell/gnome-shell.css")
@@ -116,6 +118,8 @@ class InstallTest(unittest.TestCase):
         self.assertNotIn("color-scheme", home.log())  # the style is the user's to pick
         self.assertFalse(os.path.exists(f"{home.extensions}/{FLOATING}"))
         self.assertNotIn(FLOATING, home.settings(SHELL, "enabled-extensions"))
+        self.assertFalse(os.path.exists(f"{home.extensions}/{BLUR}"))
+        self.assertNotIn(BLUR, home.settings(SHELL, "enabled-extensions"))
         self.assertTrue(os.path.exists(f"{home.extensions}/{ACCENT}"))   # it follows the style
 
         # --- Without the shell theme: the theme selected before comes back ---

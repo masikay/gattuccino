@@ -1,11 +1,11 @@
 # Gattuccino
 
-The [Catppuccin](https://catppuccin.com) palette for the GNOME desktop: a GNOME Shell theme, matching colors for applications, and two small extensions, all set up by one script.
+The [Catppuccin](https://catppuccin.com) palette for the GNOME desktop: a GNOME Shell theme, matching colors for applications, and three small extensions, all set up by one script.
 
 - **GNOME Shell theme** in Latte for the light style, and in the dark flavor of your choice for the dark style: Frappé, Macchiato or Mocha.
 - **Application colors** for GTK 4 / libadwaita and GTK 3, optionally for Flatpak applications too.
 - **The style and the accent follow Settings.** Pick *Default* or *Dark* in *Settings > Appearance* and the Shell and applications switch between Latte and your dark flavor; pick an accent there and they use its Catppuccin counterpart.
-- **Optional effects:** translucent top bar and popups, a floating, rounded top bar that docks when a window comes close, and the accent color on whatever is selected or under the pointer.
+- **Optional effects:** translucent top bar and popups, blurred or frosted glass behind them, a floating, rounded top bar that docks when a window comes close, and the accent color on whatever is selected or under the pointer.
 
 This is an unofficial project, named *Gattuccino*: `gatto`, Italian for cat, and `cappuccino` — the same construction as "Catppuccin" itself (cat + cappuccino), carried over into Italian. It is not affiliated with Catppuccin or GNOME.
 
@@ -63,6 +63,8 @@ Every preference is an option of `configure`, and a line in `~/.config/gattuccin
 | `--panel-radius` | `round`, or `0` to `100` | `round` | Corner radius of the floating bar, in pixels |
 | `--docked-panel-opacity` | `same`, or `0` to `1` | `same` | Opacity of the floating bar while docked |
 | `--dock-like-panel` / `--no-dock-like-panel` | | off | Give the dock of Dash to Dock or Ubuntu Dock the color and opacity of the top bar |
+| `--blur` | `no`, `plain`, `frosted` | `no` | Blur the desktop behind the top bar, popup menus, the overview and the dock |
+| `--blur-radius` | `0` to `100` | `32` | How far the blur reaches, in pixels |
 | `--shell-version` | `auto`, or a version | `auto` | GNOME Shell version to build the theme for |
 
 The accents are `rosewater`, `flamingo`, `pink`, `mauve`, `red`, `maroon`, `peach`, `yellow`, `green`, `teal`, `sky`, `sapphire`, `blue` and `lavender`.
@@ -97,6 +99,7 @@ Some examples:
 | `gattuccino-dock.css`, in each shell theme | `~/.themes` | `shell-theme` and `accent-selection` are on |
 | Extension `catppuccin-accent@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` or `gtk-theme` is on |
 | Extension `floating-panel@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `floating-panel` are on |
+| Extension `blur@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` is on and `blur` is not `no` |
 | Preferences, and a record of what was changed | `~/.config/gattuccino` | always |
 | The downloaded GNOME Shell stylesheets | `~/.cache/gattuccino` | `shell-theme` is on |
 
@@ -192,7 +195,21 @@ The stylesheet of an extension outranks any Shell theme, whatever the theme says
 
 ## Blur
 
-GNOME Shell themes cannot blur what is behind them. For a blurred bar and popups, add the [Blur my Shell](https://github.com/aunetx/blur-my-shell) extension and turn off its *Override background* options, so that the colors of the theme are kept.
+With `blur` on, the desktop is blurred behind the surfaces it shows through: the top bar, popup menus (panel menus, quick settings, the calendar), the overview and, with `dock-like-panel` on, the dock. It blurs whatever is actually behind them, windows included, and follows their shape, so the rounded ends of the floating bar and the rounded corners of a menu stay rounded.
+
+The overview is a surface like the others, with one difference: GNOME fills it with a solid color, so `blur` is what turns it into glass. It then shows the desktop behind it, blurred twice as far as the rest (a whole screen takes more blur than a bar) and dimmed a little, so that the names under the application icons stay legible over a bright wallpaper. With `blur no` the overview keeps GNOME's solid background.
+
+There are two kinds of glass. `plain` only blurs. `frosted` scatters the light as frosted glass does: the blurred copy is brightened and a little white goes into the color of the surface, which makes it milkier and lighter. Either way `blur-radius` says how far the blur reaches, 32 pixels by default; a larger radius is softer and shows less of what is behind.
+
+Blur is only worth anything where something shows through, so `blur` goes with `panel-opacity` and `popup-opacity` below 1. A surface that is solid is left alone, which means the floating bar is blurred while it floats and not once it has docked, if `docked-panel-opacity` is 1. The bar in the overview, where GNOME paints no background at all, is left alone too.
+
+A stylesheet cannot blur anything, so this is the one effect that is not the theme's doing alone: the theme states what it would like blurred, in properties of this project's own on the surfaces themselves, and the `blur@gattuccino` extension reads them and does the work. To stop blurring for a while without changing anything else:
+
+```sh
+gnome-extensions disable blur@gattuccino
+```
+
+This covers what [Blur my Shell](https://github.com/aunetx/blur-my-shell) is usually installed for, and does the same work as its dynamic blur, so it is not needed alongside this: a copy of what is behind each blurred surface is drawn and blurred on every frame it changes. It is work for the graphics card, so a weak machine may feel it; `blur no` takes it all away again.
 
 ## Flatpak applications
 
@@ -234,7 +251,7 @@ src/gattuccino/              the package it imports (in src/: it shares its name
   gtk_theme.py              generates the application colors
   desktop.py                paths, gsettings, extensions, Flatpak
   install.py                apply and uninstall
-extensions/                 the two extensions
+extensions/                 the three extensions
 tests/                      tests
 ```
 

@@ -14,12 +14,13 @@ import time
 
 from . import gtk_theme, palette, shell_theme, sources
 from .desktop import INTERFACE_SCHEMA, USER_THEME_SCHEMA, USER_THEME_UUID, Desktop
-from .preferences import AUTO, Preferences
+from .preferences import AUTO, NO_BLUR, Preferences
 
 # install.py is src/gattuccino/install.py: three levels up is the repo root.
 EXTENSIONS_SOURCE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "extensions")
 FLOATING_PANEL_UUID = "floating-panel@gattuccino"
+BLUR_UUID = "blur@gattuccino"
 ACCENT_UUID = "catppuccin-accent@gattuccino"
 # Names this project used before it was renamed. Nothing installs under these
 # any more, but apply() and uninstall() still remove them, so an earlier
@@ -71,6 +72,8 @@ def shell_options(preferences: Preferences) -> shell_theme.ShellOptions:
         docked_panel_opacity=preferences.docked_panel_opacity,
         dock_like_panel=preferences.dock_like_panel,
         accent_selection=preferences.accent_selection,
+        blur=preferences.blur,
+        blur_radius=preferences.blur_radius,
     )
 
 
@@ -386,6 +389,8 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
 
     wanted = {
         FLOATING_PANEL_UUID: preferences.shell_theme and preferences.floating_panel,
+        # The theme says what to blur; without the theme there is nothing to read
+        BLUR_UUID: preferences.shell_theme and preferences.blur != NO_BLUR,
         # Follows the style, and the accent when asked to, for whichever of the two is installed
         ACCENT_UUID: preferences.shell_theme or preferences.gtk_theme,
     }

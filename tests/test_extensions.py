@@ -19,13 +19,14 @@ TESTS = os.path.join(ROOT, "tests", "extensions")
 
 class ExtensionFilesTest(unittest.TestCase):
     def test_metadata(self):
-        for uuid in (install.FLOATING_PANEL_UUID, install.ACCENT_UUID):
+        for uuid in (install.FLOATING_PANEL_UUID, install.ACCENT_UUID, install.BLUR_UUID):
             with open(f"{EXTENSIONS}/{uuid}/metadata.json") as f:
                 metadata = json.load(f)
             self.assertEqual(metadata["uuid"], uuid)
             self.assertIn("48", metadata["shell-version"])
             self.assertTrue(os.path.exists(f"{EXTENSIONS}/{uuid}/extension.js"))
-        self.assertEqual(sorted(os.listdir(EXTENSIONS)), sorted([install.FLOATING_PANEL_UUID, install.ACCENT_UUID]))
+        self.assertEqual(sorted(os.listdir(EXTENSIONS)),
+                         sorted([install.FLOATING_PANEL_UUID, install.ACCENT_UUID, install.BLUR_UUID]))
 
     def test_the_accent_extension_has_the_palette(self):
         with open(f"{EXTENSIONS}/{install.ACCENT_UUID}/extension.js") as f:

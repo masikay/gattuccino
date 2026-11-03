@@ -14,6 +14,9 @@ HELP_ACCENT_SELECTION = (
 
 FOLLOW = "follow"  # accent: whatever is picked in Settings > Appearance
 AUTO = "auto"      # shell_version: the installed GNOME Shell
+# blur: plain glass is only blurred, frosted glass is milky with it
+NO_BLUR, PLAIN_BLUR, FROSTED_BLUR = "no", "plain", "frosted"
+BLUR_KINDS = (NO_BLUR, PLAIN_BLUR, FROSTED_BLUR)
 
 
 class PreferenceError(Exception):
@@ -120,12 +123,18 @@ SPECS = {
                                  none_as="same"),
     "dock_like_panel": Spec(_boolean, "yes, no",
                             "Give the dock of Dash to Dock or Ubuntu Dock the color and opacity of the top bar"),
+    "blur": Spec(_choice(*BLUR_KINDS), ", ".join(BLUR_KINDS),
+                 "Blur the desktop behind the top bar, popup menus, the overview and the dock; "
+                 "'frosted' makes the glass milkier"),
+    "blur_radius": Spec(_pixels(100), "0 to 100", "How far the blur reaches, in pixels"),
     "shell_version": Spec(_shell_version, f"{AUTO}, or a version such as 49.2",
                           f"GNOME Shell version to build the theme for; '{AUTO}' detects it"),
 }
 
 # Asked by `configure` only when the floating bar is on
 FLOATING_ONLY = ("panel_gap", "panel_radius", "docked_panel_opacity")
+# Asked by `configure` only when there is a blur to size
+BLUR_ONLY = ("blur_radius",)
 
 
 @dataclass
@@ -143,6 +152,8 @@ class Preferences:
     panel_radius: Optional[int] = None
     docked_panel_opacity: Optional[float] = None
     dock_like_panel: bool = False
+    blur: str = NO_BLUR
+    blur_radius: int = 32
     shell_version: str = AUTO
 
     def set(self, name: str, text: str):

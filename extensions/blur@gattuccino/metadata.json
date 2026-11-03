@@ -1,0 +1,11 @@
+{
+  "uuid": "blur@gattuccino",
+  "name": "Blur (Gattuccino)",
+  "description": "Companion to the Gattuccino shell theme. Blurs what is behind the translucent surfaces of the theme: the top bar, popup menus and the dock. What is blurred, and how much, is stated by the theme: with another theme this extension changes nothing.",
+  "shell-version": [
+    "48",
+    "49",
+    "50",
+    "51"
+  ]
+}

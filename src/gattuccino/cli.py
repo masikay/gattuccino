@@ -47,6 +47,8 @@ def _ask(preferences):
     for name, spec in prefs.SPECS.items():
         if name in prefs.FLOATING_ONLY and not preferences.floating_panel:
             continue
+        if name in prefs.BLUR_ONLY and preferences.blur == prefs.NO_BLUR:
+            continue
         while True:
             try:
                 answer = input(f"{spec.help}\n  {spec.values} [{preferences.text(name)}]: ").strip()
