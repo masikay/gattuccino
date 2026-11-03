@@ -170,6 +170,8 @@ Latte is built from GNOME Shell's light stylesheet, the dark flavors from its da
 
 With `floating-panel` on, the top bar floats as a rounded bar, and goes back to a normal full-width bar while a window on the current workspace is maximized, tiled, or close to it. `docked-panel-opacity` gives it another opacity in that state, for instance `1` for a solid bar under maximized windows.
 
+The bar slides between the two states instead of jumping. GNOME Shell cross-fades what it paints, the color and the corners, and the extension slides the bar over the same time, which it asks the theme for (`transition-duration` on the panel, 250ms in GNOME's own stylesheet), so the two halves of the change finish together. The gap above the bar is the one part that still changes in one step: it belongs to the work area, and animating it would resize every maximized window on every frame, so the bar is held back by a translation, which nothing else measures, and slides from there. With animations turned off in GNOME, the change happens at once.
+
 A theme cannot know where windows are: the `floating-panel` extension tells it. To stop the bar from floating for a while without changing anything else:
 
 ```sh
@@ -215,7 +217,6 @@ If your distribution's version has no upstream release of the same name, set the
 - GTK 3 applications only follow with the adw-gtk3 theme. Qt, Electron and Firefox do not use these colors at all.
 - With `accent-selection` on, GTK 3 applications get the accent on menu items and on hovered sidebar rows, but not on the selected row: GTK 3 stylesheets cannot match one.
 - Applications that set colors of their own keep them.
-- The floating bar changes shape in one step: GNOME Shell cross-fades colors, not positions.
 
 ## How it works
 

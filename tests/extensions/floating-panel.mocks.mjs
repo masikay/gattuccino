@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+
 // Stand-ins for the parts of GNOME Shell the floating-panel extension uses
 export class Emitter {
     constructor() { this._handlers = new Map(); this._next = 0; }
@@ -20,14 +22,62 @@ export function settle() { while (idle.size) for (const [id, callback] of [...id
 class WindowActor extends Emitter {}
 export const Meta = {WindowActor, WindowType: {NORMAL: 0, DESKTOP: 1, DOCK: 2, DIALOG: 3, MODAL_DIALOG: 4}};
 
-export const state = {scale: 1};
+export const state = {scale: 1, gap: 6, transition: 250};
 export const St = {ThemeContext: {get_for_stage: () => ({get scale_factor() { return state.scale; }})}};
+export const Clutter = {AnimationMode: {EASE_OUT_QUAD: 'ease-out-quad'}};
 
+// Enough of St.Widget and Clutter.Actor for the slide between the two states:
+// the margins the theme would give the panel, and an ease() that records the
+// animation instead of running it.
 class Panel extends Emitter {
-    constructor() { super(); this.height = 32; this.classes = new Set(); }
-    add_style_class_name(name) { this.classes.add(name); }
-    remove_style_class_name(name) { this.classes.delete(name); }
+    constructor() {
+        super();
+        this.height = 32;
+        this.classes = new Set();
+        this.mapped = true;
+        this.margin_top = this.margin_left = this.margin_right = 0;
+        this.translation_y = 0;
+        this.eased = null;
+        this.transitions = new Set();
+        this._styleDirty = false;
+    }
+
+    // The gap of the theme's '#panel.floating-panel' rule, and none of it while
+    // docked. St applies the margins of the matching rules as soon as the
+    // classes change, as long as the panel is on screen, and on ensure_style()
+    // otherwise.
+    _applyMargins() {
+        const gap = this.classes.has('floating-panel') ? state.gap : 0;
+        this.margin_top = this.margin_left = this.margin_right = gap;
+        this._styleDirty = false;
+    }
+    _restyle() { if (this.mapped) this._applyMargins(); else this._styleDirty = true; }
+    add_style_class_name(name) { this.classes.add(name); this._restyle(); }
+    remove_style_class_name(name) { if (this.classes.delete(name)) this._restyle(); }
+    ensure_style() { if (this._styleDirty) this._applyMargins(); }
+    get_theme_node() { return {get_transition_duration: () => state.transition}; }
+
+    ease({duration, mode, ...targets}) {
+        const from = {};
+        for (const property of Object.keys(targets)) {
+            from[property] = this[property];
+            this.transitions.add(property.replaceAll('_', '-'));
+        }
+        this.eased = {duration, mode, targets, from};
+    }
+    remove_transition(property) {
+        this.transitions.delete(property);
+        if (!this.transitions.size) this.eased = null;
+    }
+    // What Clutter leaves behind once the transitions have run their course
+    finishEase() {
+        assert.ok(this.eased, 'no animation to finish');
+        Object.assign(this, this.eased.targets);
+        this.transitions.clear();
+        this.eased = null;
+    }
 }
+
 export const Main = {
     panel: new Panel(),
     layoutManager: Object.assign(new Emitter(), {primaryMonitor: {index: 0, x: 0, y: 0, width: 1920, height: 1080}}),

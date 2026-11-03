@@ -1,3 +1,4 @@
+import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 import St from 'gi://St';
@@ -18,6 +19,13 @@ const DOCKED_CLASS = 'docked-panel';     // a window is maximized or close
 // would flip back and forth.
 const PROXIMITY = 16;
 
+// Easing of the slide from one state to the other. Its duration is not ours to
+// pick: GNOME Shell cross-fades the color and the corners of the panel on its
+// own, over the transition-duration the theme gives it, so the slide asks the
+// theme for the same time and the two halves of the change finish together.
+const EASING = Clutter.AnimationMode.EASE_OUT_QUAD;
+const SLIDING = ['translation-y', 'margin-left', 'margin-right'];
+
 const WINDOW_TYPES = [
     Meta.WindowType.NORMAL,
     Meta.WindowType.DIALOG,
@@ -32,6 +40,7 @@ export default class FloatingPanelExtension extends Extension {
         this._signals = [];
         this._windowActors = new Map();
         this._idleId = 0;
+        this._docked = null;   // unknown: the first update does not slide
 
         this._connect(global.window_group, 'child-added',
             (_group, actor) => this._trackWindowActor(actor));
@@ -64,6 +73,10 @@ export default class FloatingPanelExtension extends Extension {
             GLib.source_remove(this._idleId);
             this._idleId = 0;
         }
+
+        // Before the classes go, so that the margins the theme puts back are
+        // not overwritten by the rest of a slide
+        this._stopSlide();
 
         Main.panel.remove_style_class_name(FLOATING_CLASS);
         Main.panel.remove_style_class_name(DOCKED_CLASS);
@@ -113,12 +126,85 @@ export default class FloatingPanelExtension extends Extension {
 
     _update() {
         const docked = this._hasWindowNearPanel();
+        if (docked === this._docked)
+            return;
+
+        const panel = Main.panel;
         const [add, remove] = docked
             ? [DOCKED_CLASS, FLOATING_CLASS]
             : [FLOATING_CLASS, DOCKED_CLASS];
 
-        Main.panel.remove_style_class_name(remove);
-        Main.panel.add_style_class_name(add);
+        // Where the bar is right now. While a slide is still running these are
+        // the values it is passing through, so a change of mind halfway carries
+        // on from where the bar actually is.
+        const from = {
+            top: panel.margin_top + panel.translation_y,
+            left: panel.margin_left,
+            right: panel.margin_right,
+        };
+        const first = this._docked === null;
+        this._docked = docked;
+
+        panel.remove_style_class_name(remove);
+        panel.add_style_class_name(add);
+        // The panel restyles itself as the classes change, as long as it is on
+        // screen; this is for when it is not, so that the margins read below
+        // are those of the new state either way.
+        panel.ensure_style();
+
+        if (!first)
+            this._slide(from);
+    }
+
+    // Move the bar from the geometry of the state it was in to the one the
+    // theme has just given it. GNOME Shell cross-fades what it paints, the
+    // color and the corners, but not where it paints it: left alone, the bar
+    // changes place and width in one step.
+    _slide(from) {
+        const panel = Main.panel;
+        const to = {
+            top: panel.margin_top,
+            left: panel.margin_left,
+            right: panel.margin_right,
+        };
+        if (to.top === from.top && to.left === from.left && to.right === from.right)
+            return;
+
+        // Ask the theme how long its cross-fade takes, as GNOME's own switches
+        // do. Calling get_theme_node() while unmapped is an error, and there
+        // would be nothing to see anyway.
+        const duration = panel.mapped
+            ? panel.get_theme_node().get_transition_duration()
+            : 0;
+        if (duration <= 0) {
+            // No cross-fade to keep up with, or nothing to see: change in one
+            // step, and leave no slide of an earlier change behind.
+            panel.translation_y = 0;
+            return;
+        }
+
+        // The gap above the bar is the one part of this that changes the height
+        // of the panel's container, and with it the work area: animating it
+        // would resize every maximized window on every frame. So it takes its
+        // new value at once and the bar is moved back by hand, which no one
+        // else measures, to slide from there.
+        panel.translation_y = from.top - to.top;
+        panel.margin_left = from.left;
+        panel.margin_right = from.right;
+
+        panel.ease({
+            translation_y: 0,
+            margin_left: to.left,
+            margin_right: to.right,
+            duration,
+            mode: EASING,
+        });
+    }
+
+    _stopSlide() {
+        for (const property of SLIDING)
+            Main.panel.remove_transition(property);
+        Main.panel.translation_y = 0;
     }
 
     _hasWindowNearPanel() {
