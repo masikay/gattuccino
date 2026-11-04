@@ -439,16 +439,25 @@ class OverviewWallpaper {
     /** The widgets for the monitors and the picture there are now. */
     rebuild() {
         this._drop();
-        const style = this._style();
-        if (!style)
+        const picture = this._style();
+        if (!picture)
             return;
+        const {style, spanned} = picture;
+
+        // A spanned wallpaper is one picture over all the monitors together,
+        // and each of them shows its own part of it, not all of it squeezed in.
+        const monitors = Main.layoutManager.monitors;
+        const left = Math.min(...monitors.map(monitor => monitor.x));
+        const top = Math.min(...monitors.map(monitor => monitor.y));
+        const right = Math.max(...monitors.map(monitor => monitor.x + monitor.width));
+        const bottom = Math.max(...monitors.map(monitor => monitor.y + monitor.height));
 
         const uiGroup = Main.layoutManager.uiGroup;
         const overview = Main.layoutManager.overviewGroup;
-        for (const monitor of Main.layoutManager.monitors) {
+        for (const monitor of monitors) {
             const widget = new St.Widget({
                 name: BACKDROP_NAME,
-                style,
+                style: spanned ? `background-color: ${picture.color};` : style,
                 x: monitor.x,
                 y: monitor.y,
                 width: monitor.width,
@@ -456,6 +465,17 @@ class OverviewWallpaper {
                 clip_to_allocation: true,
                 opacity: 0,
             });
+            if (spanned) {
+                // The whole picture, at the size of all the monitors, moved so
+                // that this monitor's part of it is the part in view
+                widget.add_child(new St.Widget({
+                    style,
+                    x: left - monitor.x,
+                    y: top - monitor.y,
+                    width: right - left,
+                    height: bottom - top,
+                }));
+            }
             widget.add_effect_with_name('blur', new Shell.BlurEffect({mode: Shell.BlurMode.ACTOR}));
             uiGroup.insert_child_below(widget, overview);
             this._widgets.push(widget);
@@ -478,7 +498,7 @@ class OverviewWallpaper {
                 return null;
             style += ` background-image: url("${uri}"); ${PLACEMENT[options] ?? PLACEMENT.zoom}`;
         }
-        return style;
+        return {style, color, spanned: options === 'spanned'};
     }
 
     show() {

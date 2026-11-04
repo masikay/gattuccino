@@ -354,6 +354,19 @@ test('the overview', async t => {
         assert.deepEqual([wallpapers()[1].x, wallpapers()[1].width], [1600, 1280]);
     });
 
+    await t.test('shows each monitor its own part of a spanned wallpaper', () => {
+        gsettings['picture-options'] = 'spanned';
+        Main.layoutManager.emit('monitors-changed');
+        const [first, second] = wallpapers();
+        for (const [wallpaper, monitor] of [[first, 0], [second, 1]]) {
+            const [picture] = wallpaper.get_children();
+            assert.match(picture.style, /wall.jpg/);
+            assert.deepEqual([picture.width, picture.height], [2880, 1024]);
+            assert.deepEqual([picture.x, picture.y], [monitor ? -1600 : 0, 0]);
+        }
+        gsettings['picture-options'] = 'zoom';
+    });
+
     await t.test('has none for a wallpaper that is a slideshow', () => {
         gsettings['picture-uri'] = 'file:///usr/share/backgrounds/slides.xml';
         Main.layoutManager.emit('monitors-changed');
