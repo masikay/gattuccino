@@ -28,6 +28,10 @@ const BACKDROP_NAME = 'gattuccino-blur';
 
 // A menu's content sits inside a bin inside its box pointer
 const POPUP_DEPTH = 3;
+
+// Frames to blur the copy again for while the overview opens: its own animation
+// is 250ms, which is 15 frames at 60Hz, with a margin for a slower machine.
+const OVERVIEW_FRAMES = 40;
 const DOCK_DEPTH = 5;
 
 // Every way a surface is moved or resized
@@ -115,14 +119,18 @@ const RoundedMaskEffect = GObject.registerClass({
  * menu opens with.
  */
 class Backdrop {
-    constructor(shape, anchor, {wallpaper = false, onGone = null} = {}) {
+    constructor(shape, anchor, {monitor = null, onGone = null} = {}) {
         this._shape = shape;
         this._anchor = anchor;
-        this._wallpaper = wallpaper;
+        // A wallpaper backdrop belongs to one monitor and covers exactly it
+        this._monitor = monitor;
+        this._wallpaper = monitor !== null;
         this._onGone = onGone;
         this._wanted = false;
         this._shown = false;
         this._updateId = 0;
+        this._repaintId = 0;
+        this._repaintsLeft = 0;
         this._needsRestack = false;
         this._backgrounds = [];
 
@@ -150,8 +158,12 @@ class Backdrop {
         // own margin by a translation. Each of them is followed, as not all of
         // them change the allocation.
         const signals = [
-            ...MOVED.map(signal => [shape, signal, () => this._place()]),
-            ...MOVED.map(signal => [anchor, signal, () => this._place()]),
+            // The overview is the size of the screen and stays there; following
+            // the actor would mean giving the blur a new size on every frame of
+            // the overview's own animation, each one undoing the Shell's layout
+            // in the middle of it.
+            ...(this._wallpaper ? [] : MOVED.map(signal => [shape, signal, () => this._place()])),
+            ...(this._wallpaper ? [] : MOVED.map(signal => [anchor, signal, () => this._place()])),
             [shape, 'notify::mapped', () => this.refresh()],
             [shape, 'style-changed', () => this.refresh()],
             [anchor, 'notify::visible', () => this._show()],
@@ -174,8 +186,16 @@ class Backdrop {
         return new Clutter.Clone({source: global.window_group});
     }
 
+    get anchor() {
+        return this._anchor;
+    }
+
+    get monitor() {
+        return this._monitor;
+    }
+
     /**
-     * A wallpaper of this backdrop's own, one actor per monitor.
+     * A wallpaper of this backdrop's own, for its monitor.
      *
      * The overview cannot use a copy of the desktop: the Shell hides the
      * windows while it is open, and drawing a clone of a hidden actor makes
@@ -185,37 +205,33 @@ class Backdrop {
      */
     _wallpaperContent() {
         const group = new Meta.BackgroundGroup();
-        for (const monitor of Main.layoutManager.monitors) {
-            const widget = new St.Widget({
-                x: monitor.x, y: monitor.y,
-                width: monitor.width, height: monitor.height,
-            });
-            group.add_child(widget);
-            this._backgrounds.push(new Background.BackgroundManager({
-                container: widget,
-                monitorIndex: monitor.index,
-                controlPosition: false,
-            }));
-        }
+        const monitor = this._monitorRect();
+        if (!monitor)
+            return group;
+
+        const widget = new St.Widget({width: monitor.width, height: monitor.height});
+        group.add_child(widget);
+        this._backgrounds.push(new Background.BackgroundManager({
+            container: widget,
+            monitorIndex: monitor.index,
+            controlPosition: false,
+        }));
         return group;
     }
 
-    /** Monitors changed, so the wallpaper actors have to be laid out again. */
-    rebuild() {
-        if (!this._wallpaper)
-            return;
-        this._dropBackgrounds();
-        this._actor.remove_child(this._content);
-        this._content.destroy();
-        this._content = this._wallpaperContent();
-        this._actor.add_child(this._content);
-        this._place();
+    _monitorRect() {
+        return Main.layoutManager.monitors.find(monitor => monitor.index === this._monitor) ?? null;
     }
 
     destroy() {
+        const laters = global.compositor.get_laters();
         if (this._updateId) {
-            global.compositor.get_laters().remove(this._updateId);
+            laters.remove(this._updateId);
             this._updateId = 0;
+        }
+        if (this._repaintId) {
+            laters.remove(this._repaintId);
+            this._repaintId = 0;
         }
         for (const [object, id] of this._signals)
             object.disconnect(id);
@@ -235,13 +251,23 @@ class Backdrop {
         this._backgrounds = [];
     }
 
+    /** Whether anything will be painted: an actor on none of the stage's views
+     * is never asked for, however shown it says it is. */
+    isPainted() {
+        return this._shown && this._actor?.opacity > 0 &&
+            (this._actor.peek_stage_views?.().length ?? 1) > 0;
+    }
+
     /** What state the blur is in, for the one case that is worth reporting. */
     describe() {
-        const box = this._shape.get_allocation_box();
-        return `wanted ${this._wanted}, shown ${this._actor?.visible}, ` +
-            `surface ${Math.round(box.get_width())}x${Math.round(box.get_height())} ` +
-            `(mapped ${this._shape.mapped}), anchor ${this._anchor.visible} at ` +
-            `${this._anchor.opacity}, ${this._content?.get_children().length} behind it`;
+        const surface = this._shape.get_allocation_box();
+        const own = this._actor?.get_allocation_box();
+        return `wanted ${this._wanted}, shown ${this._shown} at ${this._actor?.opacity}, ` +
+            `on ${this._actor?.peek_stage_views?.().length ?? '?'} views, ` +
+            `surface ${Math.round(surface.get_width())}x${Math.round(surface.get_height())} ` +
+            `(mapped ${this._shape.mapped}), blur ` +
+            `${Math.round(own?.get_width() ?? 0)}x${Math.round(own?.get_height() ?? 0)}, ` +
+            `${this._content?.get_children().length} behind it`;
     }
 
     /** The surface is being destroyed, and takes its blur with it. */
@@ -293,6 +319,30 @@ class Backdrop {
     }
 
     /**
+     * Blur the copy again on each of the next `frames` frames.
+     *
+     * The blurred copy is kept in a texture of its own and made again only
+     * when something says it is out of date. While the overview opens nothing
+     * does: what is behind the glass has not changed, only what is in front of
+     * it. A texture kept from before then shows either nothing at all or a
+     * picture of an earlier frame, which is the ghost.
+     */
+    repaintFor(frames) {
+        this._repaintsLeft = Math.max(this._repaintsLeft, frames);
+        if (this._repaintId || !this._shown)
+            return;
+
+        this._repaintId = global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
+            this._blur.queue_repaint();
+            this._mask.queue_repaint();
+            if (--this._repaintsLeft > 0)
+                return GLib.SOURCE_CONTINUE;
+            this._repaintId = 0;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    /**
      * Show or hide the blur by its opacity, and never by hiding the actor.
      *
      * An actor that has just been shown is waiting to be laid out, and Clutter
@@ -306,10 +356,40 @@ class Backdrop {
      * At opacity zero the actor is laid out as always and simply not painted,
      * so it is always on a view and always ready to be shown again.
      */
-    _show() {
+    /** Where the shape sits inside the anchor, which may be a few actors up (a
+     * menu's content is in a bin inside its box pointer) and may be sliding
+     * (the floating bar docks by moving under its own margin). The anchor's own
+     * scale and translation are left out: they are bound to the backdrop
+     * instead, so that it is animated with the anchor.
+     *
+     * Every reading is of the allocation, never of x/y/width/height: those
+     * answer with the size an actor would like to be, not the one it has, while
+     * a relayout is pending. */
+    _box() {
+        // A wallpaper backdrop covers its monitor, and moves only when it does.
+        // One for each, rather than one across them all: an actor that spans
+        // two of the stage's views is drawn once for each of them, and the
+        // overview, alone among these surfaces, is the width of the screen.
+        if (this._wallpaper) {
+            const monitor = this._monitorRect();
+            return monitor ? [monitor.x, monitor.y, monitor.width, monitor.height] : [0, 0, 0, 0];
+        }
+
+        const anchorBox = this._anchor.get_allocation_box();
+        let x = anchorBox.x1;
+        let y = anchorBox.y1;
+        for (let actor = this._shape; actor && actor !== this._anchor; actor = actor.get_parent()) {
+            const allocation = actor.get_allocation_box();
+            x += allocation.x1 + actor.translation_x;
+            y += allocation.y1 + actor.translation_y;
+        }
         const box = this._shape.get_allocation_box();
-        const sized = box.get_width() > 0 && box.get_height() > 0;
-        const ready = this._wanted && this._anchor.visible && sized;
+        return [x, y, box.get_width(), box.get_height()];
+    }
+
+    _show() {
+        const [, , width, height] = this._box();
+        const ready = this._wanted && this._anchor.visible && width > 0 && height > 0;
         // A copy of the desktop is only drawn while the desktop itself is.
         const shown = ready && (this._wallpaper || global.window_group.mapped);
         const opacity = shown ? this._anchor.opacity : 0;
@@ -325,14 +405,19 @@ class Backdrop {
     }
 
     /**
-     * Moving and restacking the backdrop both belong at the end of the frame,
-     * never in the middle of one.
+     * Moving and restacking the backdrop both wait for the frame's own moment
+     * for such work, and are done once however much has been heard meanwhile.
      *
      * Most of what says a surface has moved is said while the Shell is laying
      * it out, and giving an actor a new size and place from inside that starts
      * another layout within the one going on. In the overview, where there is a
      * great deal to lay out, that showed as the app grid being painted several
      * times over, slightly out of step with itself.
+     *
+     * The moment is before the redraw, when the layout has been done and can be
+     * read. Nothing is written back unless it has actually changed, so the
+     * layout is undone only when the blur really has to move, and not once per
+     * frame of an animation that leaves it where it was.
      *
      * A menu is also raised to the top of its parent as it opens, which would
      * leave its blur behind it; the raise is done once the menu has been shown,
@@ -377,23 +462,23 @@ class Backdrop {
         // answer with the size an actor would like to be, not the one it has,
         // while a relayout is pending, and the allocation that follows is often
         // the same one as before and so goes unannounced.
-        const box = this._shape.get_allocation_box();
         const anchorBox = this._anchor.get_allocation_box();
-        let x = anchorBox.x1;
-        let y = anchorBox.y1;
-        for (let actor = this._shape; actor && actor !== this._anchor; actor = actor.get_parent()) {
-            const allocation = actor.get_allocation_box();
-            x += allocation.x1 + actor.translation_x;
-            y += allocation.y1 + actor.translation_y;
-        }
+        const [x, y, width, height] = this._box();
 
-        const [width, height] = [box.get_width(), box.get_height()];
-        this._actor.set_position(x, y);
-        this._actor.set_size(width, height);
+        // Only what has really changed is written back: setting an actor's size
+        // and place undoes the layout, and a surface that is animated says it
+        // has moved on every frame of it while staying exactly where it was.
+        if (x !== this._actor.x || y !== this._actor.y)
+            this._actor.set_position(x, y);
+        if (width !== this._actor.width || height !== this._actor.height)
+            this._actor.set_size(width, height);
 
         // Line the copy up with the screen it is a copy of
-        const [stageX, stageY] = this._shape.get_transformed_position();
-        this._content.set_position(-stageX, -stageY);
+        if (!this._wallpaper) {
+            const [stageX, stageY] = this._shape.get_transformed_position();
+            if (-stageX !== this._content.x || -stageY !== this._content.y)
+                this._content.set_position(-stageX, -stageY);
+        }
 
         // Zoom about the same point as the anchor, so that the blur follows the
         // way a menu opens instead of appearing at full size
@@ -411,7 +496,7 @@ class Backdrop {
 
 export default class BlurExtension extends Extension {
     enable() {
-        this._backdrops = new Map();   // anchor actor -> Backdrop
+        this._backdrops = new Set();   // one for each surface, and for each monitor of the overview
         this._signals = [];
 
         const uiGroup = Main.layoutManager.uiGroup;
@@ -425,7 +510,17 @@ export default class BlurExtension extends Extension {
         // little is said about it; and it is the one surface other extensions
         // take a hand in. Asking it again as it opens costs a theme node and
         // keeps it from standing on whichever signal happened to arrive.
-        this._connect(Main.overview, 'showing', () => this._refreshAll());
+        // The theme is reloaded whole whenever the style or the accent changes,
+        // and for a moment carries none of this project's properties. Every
+        // surface is asked again once it has settled.
+        this._connect(St.ThemeContext.get_for_stage(global.stage), 'changed',
+            () => this._refreshAll());
+        this._connect(Main.overview, 'showing', () => {
+            this._refreshAll();
+            // For as long as the overview takes to open, and a little over
+            for (const backdrop of this._backdrops)
+                backdrop.repaintFor(OVERVIEW_FRAMES);
+        });
         this._connect(Main.overview, 'shown', () => this._overviewShown());
 
         for (const actor of uiGroup.get_children())
@@ -437,7 +532,7 @@ export default class BlurExtension extends Extension {
             object.disconnect(id);
         this._signals = null;
 
-        for (const backdrop of this._backdrops.values())
+        for (const backdrop of this._backdrops)
             backdrop.destroy();
         this._backdrops = null;
     }
@@ -459,7 +554,8 @@ export default class BlurExtension extends Extension {
         // The overview is one surface of its own: it fills the screen, and the
         // theme turns the solid color GNOME gives it into glass.
         if (actor === Main.layoutManager.overviewGroup) {
-            this._add(actor, actor, {wallpaper: true});
+            for (const monitor of Main.layoutManager.monitors)
+                this._add(actor, actor, {monitor: monitor.index});
             return;
         }
         if (actor.name === DOCK_CONTAINER) {
@@ -474,28 +570,37 @@ export default class BlurExtension extends Extension {
     }
 
     _unwatch(actor) {
-        for (const [anchor, backdrop] of this._backdrops) {
-            if (anchor === actor || anchor.get_parent() === actor) {
-                this._backdrops.delete(anchor);
+        for (const backdrop of [...this._backdrops]) {
+            if (backdrop.anchor === actor || backdrop.anchor.get_parent() === actor) {
+                this._backdrops.delete(backdrop);
                 backdrop.destroy();
             }
         }
     }
 
-    _add(shape, anchor, options = {}) {
-        if (!anchor || this._backdrops.has(anchor) || !anchor.get_parent())
+    _add(shape, anchor, {monitor = null} = {}) {
+        if (!anchor || !anchor.get_parent() || this._find(anchor, monitor))
             return;
-        this._backdrops.set(anchor, new Backdrop(shape, anchor,
-            {...options, onGone: () => this._backdrops.delete(anchor)}));
+        const backdrop = new Backdrop(shape, anchor,
+            {monitor, onGone: () => this._backdrops.delete(backdrop)});
+        this._backdrops.add(backdrop);
+    }
+
+    _find(anchor, monitor = null) {
+        for (const backdrop of this._backdrops) {
+            if (backdrop.anchor === anchor && backdrop.monitor === monitor)
+                return backdrop;
+        }
+        return null;
     }
 
     _showAll() {
-        for (const backdrop of this._backdrops.values())
+        for (const backdrop of this._backdrops)
             backdrop._show();
     }
 
     _refreshAll() {
-        for (const backdrop of this._backdrops.values())
+        for (const backdrop of this._backdrops)
             backdrop.refresh();
     }
 
@@ -503,14 +608,22 @@ export default class BlurExtension extends Extension {
     // It leaves a line behind if it happens again, rather than nothing to go on.
     _overviewShown() {
         this._refreshAll();
-        const backdrop = this._backdrops.get(Main.layoutManager.overviewGroup);
-        if (backdrop && !backdrop.isShown())
-            console.warn(`gattuccino: the overview is up without its blur (${backdrop.describe()})`);
+        for (const backdrop of this._backdrops) {
+            if (backdrop.anchor === Main.layoutManager.overviewGroup && !backdrop.isPainted())
+                console.warn(`gattuccino: the overview is up without its blur (${backdrop.describe()})`);
+        }
     }
 
+    // The monitors changed: the overview has one backdrop for each of them, so
+    // they are made afresh rather than mended.
     _rebuildAll() {
-        for (const backdrop of this._backdrops.values())
-            backdrop.rebuild();
+        for (const backdrop of [...this._backdrops]) {
+            if (backdrop.monitor === null)
+                continue;
+            this._backdrops.delete(backdrop);
+            backdrop.destroy();
+        }
+        this._watch(Main.layoutManager.overviewGroup);
     }
 }
 

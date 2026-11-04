@@ -132,6 +132,9 @@ SPECS = {
     "blur": Spec(_blur, "yes, no",
                  "Blur the desktop behind the top bar, popup menus, the overview and the dock"),
     "blur_radius": Spec(_pixels(100), "0 to 100", "How far the blur reaches, in pixels"),
+    "blur_overview": Spec(_boolean, "yes, no",
+                          "Blur the desktop behind the overview as well; with this off the overview "
+                          "keeps the plain background GNOME gives it"),
     "shell_version": Spec(_shell_version, f"{AUTO}, or a version such as 49.2",
                           f"GNOME Shell version to build the theme for; '{AUTO}' detects it"),
 }
@@ -139,7 +142,7 @@ SPECS = {
 # Asked by `configure` only when the floating bar is on
 FLOATING_ONLY = ("panel_gap", "panel_radius", "docked_panel_opacity")
 # Asked by `configure` only when there is a blur to size
-BLUR_ONLY = ("blur_radius",)
+BLUR_ONLY = ("blur_radius", "blur_overview")
 
 
 @dataclass
@@ -159,6 +162,7 @@ class Preferences:
     dock_like_panel: bool = False
     blur: bool = False
     blur_radius: int = 32
+    blur_overview: bool = True
     shell_version: str = AUTO
 
     def set(self, name: str, text: str):

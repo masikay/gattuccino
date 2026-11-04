@@ -49,6 +49,7 @@ class ShellOptions:
     accent_selection: bool = False
     blur: bool = False
     blur_radius: int = 32
+    blur_overview: bool = True
 
 
 def theme_name(flavor: str, accent: str) -> str:
@@ -387,19 +388,21 @@ def _apply_blur(sass_dir: str, options: ShellOptions):
     surfaces = [
         ("#panel", 1),                # the top bar, floating or docked
         (".popup-menu-content", 1),   # panel menus, quick settings, the calendar
+    ]
+    if options.blur_overview:
         # The overview is a whole screen rather than a pane held up to the eye,
         # and takes a little dimming so that the names under the application
         # icons stay legible over a bright wallpaper.
-        ("#overviewGroup", OVERVIEW_DIM),
-    ]
+        surfaces.append(("#overviewGroup", OVERVIEW_DIM))
     if options.dock_like_panel:
         surfaces.append(("#dashtodockContainer #dash .dash-background", 1))
 
     # GNOME fills the overview with a solid color: make it glass, so that there
     # is something to blur behind it. Everything else is translucent already,
     # by the opacity preferences.
-    _replace_once(f"{sass_dir}/widgets/_overview.scss", "background-color: $system_base_color;",
-                  f"background-color: {_transparent('$system_base_color', OVERVIEW_OPACITY)};")
+    if options.blur_overview:
+        _replace_once(f"{sass_dir}/widgets/_overview.scss", "background-color: $system_base_color;",
+                      f"background-color: {_transparent('$system_base_color', OVERVIEW_OPACITY)};")
 
     rules = "".join(f"""
 {surface} {{

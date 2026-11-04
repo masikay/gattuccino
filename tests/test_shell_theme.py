@@ -83,6 +83,12 @@ class ShellThemeTest(unittest.TestCase):
         self.assertNotIn("gattuccino-blur", self.build())
         self.assertNotIn("gattuccino-blur", self.build(blur=False, blur_radius=40))
 
+    def test_the_overview_can_be_left_out_of_the_blur(self):
+        r = rules(self.build(blur=True, blur_overview=False))
+        self.assertEqual(r["#panel"]["-gattuccino-blur-radius"], "32px")
+        # GNOME's own solid background is left on it, so there is nothing to see through
+        self.assertEqual(r["#overviewGroup"], {"background-color": "#1e1e2e"})
+
     def test_blur_leaves_the_colors_of_the_surfaces_alone(self):
         options = dict(panel_opacity=0.8, popup_opacity=0.8, floating_panel=True,
                        docked_panel_opacity=0.9, dock_like_panel=True)

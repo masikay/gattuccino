@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
-import {Actor, Main, backdropsIn, backgrounds, desktop, menu, settle, state} from './blur.mocks.mjs';
+import {Actor, Main, backdropsIn, backgrounds, desktop, menu, settle, state, themeContext} from './blur.mocks.mjs';
 
 const Blur = await loadExtension('blur@gattuccino', 'blur.mocks.mjs');
 
@@ -124,6 +124,19 @@ test('the top bar', async t => {
         assert.equal(shown(backdrop), true);
     });
 
+    // The theme is reloaded whole when the style or the accent changes, and
+    // carries none of these properties while it is between the two.
+    await t.test('comes back after the theme has been reloaded', () => {
+        state.theme = {...THEME, radius: null};
+        panel.emit('style-changed');
+        assert.equal(shown(backdrop), false);
+
+        reset();                       // the new theme is in place, unsaid
+        themeContext.emit('changed');
+        settle();
+        assert.equal(shown(backdrop), true);
+    });
+
     await t.test('does nothing at all with a theme that does not ask for it', () => {
         state.theme = {...THEME, radius: null};
         panel.emit('style-changed');
@@ -191,6 +204,18 @@ test('menus', async t => {
 
         pointer.set({opacity: 255, scale_x: 1, scale_y: 1, translation_y: 0});
         assert.equal(backdrop.opacity, 255);
+    });
+
+    await t.test('are not shown before they have been given a size', () => {
+        const {top, pointer, content} = menu({width: 0, height: 0});
+        uiGroup.add_child(top);
+        settle();
+        const backdrop = backdropOf(pointer);
+        assert.equal(shown(backdrop), false, 'shown before it had a size');
+
+        content.set_size(400, 300);
+        settle();
+        assert.equal(shown(backdrop), true);
     });
 
     await t.test('wait for their first opening, when they have a style to read', () => {
@@ -299,16 +324,16 @@ test('the overview', async t => {
         assert.equal(backdrop.get_effect('blur').radius, 32);
     });
 
-    await t.test('waits for a size before it is shown at all', () => {
+    // The overview is the size of the screen whatever the actor says, and is
+    // never followed about: giving the blur a new size on every frame of the
+    // overview's own animation undoes the Shell's layout in the middle of it.
+    await t.test('takes the size of the screen, not of the actor', () => {
         overviewGroup.set({visible: false});
-        const [width, height] = [overviewGroup.width, overviewGroup.height];
         overviewGroup.width = overviewGroup.height = 0;
         overviewGroup.set({visible: true});
-        assert.equal(shown(backdrop), false, 'shown before it had a size');
-
-        overviewGroup.set_size(width, height);
         settle();
         assert.equal(shown(backdrop), true);
+        assert.deepEqual([backdrop.x, backdrop.y, backdrop.width, backdrop.height], [0, 0, 1600, 900]);
     });
 
     await t.test('says so if the overview is ever up without it', () => {
@@ -324,10 +349,34 @@ test('the overview', async t => {
             Main.overview.emit('shown');
             assert.equal(said.length, 1);
             assert.match(said[0], /overview is up without its blur \(wanted false/);
+
+            // and the same if it is shown but on none of the stage's views,
+            // which is the one way left for it to be there and never painted
+            reset();
+            Main.overview.emit('shown');
+            assert.equal(said.length, 1);
+            backdrop.views = [];
+            Main.overview.emit('shown');
+            assert.equal(said.length, 2);
+            assert.match(said[1], /on 0 views/);
+            backdrop.views = null;
         } finally {
             console.warn = warn;
             reset();
         }
+    });
+
+    // The blurred copy is kept in a texture and made again only when something
+    // says it is out of date; while the overview opens, nothing does.
+    await t.test('is blurred again while the overview opens', () => {
+        overviewGroup.set({visible: true});
+        settle();
+        const before = backdrop.get_effect('blur').repaints;
+
+        Main.overview.emit('showing');
+        settle();
+        const after = backdrop.get_effect('blur').repaints;
+        assert.ok(after > before + 10, `blurred again ${after - before} times`);
     });
 
     // Other extensions take a hand in the overview, and it is shown without

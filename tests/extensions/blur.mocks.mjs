@@ -120,6 +120,8 @@ export class Actor extends Emitter {
         return [x, y];
     }
     queue_redraw() { this._redraws++; }
+    /** Which of the stage's views the actor is on: none means never painted. */
+    peek_stage_views() { return this.views ?? [1]; }
 
     has_style_class_name(name) { return this.style_class.split(' ').includes(name); }
     get_theme_node() {
@@ -172,8 +174,9 @@ class ShaderEffect {
 }
 
 class BlurEffect {
-    constructor(properties = {}) { Object.assign(this, {radius: 0, brightness: 1, mode: 0}, properties); }
+    constructor(properties = {}) { Object.assign(this, {radius: 0, brightness: 1, mode: 0, repaints: 0}, properties); }
     set(properties) { Object.assign(this, properties); }
+    queue_repaint() { this.repaints++; }
 }
 
 // Work queued for the end of the frame
@@ -183,16 +186,22 @@ export const pendingLaters = () => laters.size;
 export function settle(limit = 100) {
     for (let round = 0; laters.size; round++) {
         if (round >= limit) throw new Error('the work queued for the end of the frame never settles');
-        for (const [id, callback] of [...laters]) { laters.delete(id); callback(); }
+        for (const [id, callback] of [...laters]) {
+            laters.delete(id);
+            // Work that asks to run again on the next frame does, as in Clutter
+            if (callback() === GLib.SOURCE_CONTINUE) laters.set(id, callback);
+        }
     }
 }
 
-export const GLib = {PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false};
+export const GLib = {PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false, SOURCE_CONTINUE: true};
 export const Clutter = {Clone, ShaderEffect};
 export const Cogl = {SnippetHook: {FRAGMENT: 2048}, Snippet: {new: (hook, declarations, post) => ({hook, declarations, post})}};
 export const Shell = {BlurEffect, BlurMode: {ACTOR: 0, BACKGROUND: 1}};
-export const Meta = {BackgroundGroup: class BackgroundGroup extends Actor {}, LaterType: {BEFORE_REDRAW: 4}};
+export const Meta = {BackgroundGroup: class BackgroundGroup extends Actor {}, LaterType: {RESIZE: 0, BEFORE_REDRAW: 4}};
+export const themeContext = new Emitter();
 export const St = {
+    ThemeContext: {get_for_stage: () => themeContext},
     Widget: Actor,
     Corner: {TOPLEFT: 0, TOPRIGHT: 1, BOTTOMRIGHT: 2, BOTTOMLEFT: 3},
     Side: {TOP: 0, RIGHT: 1, BOTTOM: 2, LEFT: 3},

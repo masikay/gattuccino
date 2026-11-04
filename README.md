@@ -65,6 +65,7 @@ Every preference is an option of `configure`, and a line in `~/.config/gattuccin
 | `--dock-like-panel` / `--no-dock-like-panel` | | off | Give the dock of Dash to Dock or Ubuntu Dock the color and opacity of the top bar |
 | `--blur` / `--no-blur` | | off | Blur the desktop behind the top bar, popup menus, the overview and the dock |
 | `--blur-radius` | `0` to `100` | `32` | How far the blur reaches, in pixels |
+| `--blur-overview` / `--no-blur-overview` | | on | Blur the desktop behind the overview as well |
 | `--shell-version` | `auto`, or a version | `auto` | GNOME Shell version to build the theme for |
 
 The accents are `rosewater`, `flamingo`, `pink`, `mauve`, `red`, `maroon`, `peach`, `yellow`, `green`, `teal`, `sky`, `sapphire`, `blue` and `lavender`.
@@ -197,7 +198,9 @@ The stylesheet of an extension outranks any Shell theme, whatever the theme says
 
 With `blur` on, the desktop is blurred behind the surfaces it shows through: the top bar, popup menus (panel menus, quick settings, the calendar), the overview and, with `dock-like-panel` on, the dock. It blurs whatever is actually behind them, windows included, and follows their shape, so the rounded ends of the floating bar and the rounded corners of a menu stay rounded.
 
-The overview is a surface like the others, with one difference: GNOME fills it with a solid color, so `blur` is what turns it into glass. It then shows the wallpaper behind it, dimmed a little so that the names under the application icons stay legible over a bright one. With `blur` off the overview keeps GNOME's solid background.
+The overview is a surface like the others, with one difference: GNOME fills it with a solid color, so `blur` is what turns it into glass. It then shows the wallpaper behind it, dimmed a little so that the names under the application icons stay legible over a bright one. It gets a blur of its own for each monitor, rather than one across them all, an actor that spans two monitors being drawn once for each of them.
+
+`blur-overview` turns that part off on its own, leaving the overview the plain background GNOME gives it while the bar, menus and dock keep their blur. It is worth reaching for if the overview misbehaves on your machine: it changes only the theme, so it takes effect on `apply` without logging out.
 
 `blur-radius` says how far the blur reaches, 32 pixels by default; a larger radius is softer and shows less of what is behind. The colors of the surfaces are the theme's and are not touched: the blur is behind them, and changes nothing in front of them.
 
