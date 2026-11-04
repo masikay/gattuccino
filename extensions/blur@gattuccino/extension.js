@@ -121,11 +121,12 @@ class Backdrop {
         this._wallpaper = wallpaper;
         this._onGone = onGone;
         this._wanted = false;
+        this._shown = false;
         this._updateId = 0;
         this._needsRestack = false;
         this._backgrounds = [];
 
-        this._actor = new St.Widget({name: BACKDROP_NAME, clip_to_allocation: true});
+        this._actor = new St.Widget({name: BACKDROP_NAME, clip_to_allocation: true, opacity: 0});
         this._content = this._wallpaper ? this._wallpaperContent() : this._desktopContent();
         this._actor.add_child(this._content);
 
@@ -138,7 +139,9 @@ class Backdrop {
 
         anchor.get_parent().insert_child_below(this._actor, anchor);
 
-        this._bindings = ['opacity', 'scale-x', 'scale-y', 'translation-x', 'translation-y']
+        // Not the opacity: that is this backdrop's way of showing and hiding
+        // itself, and it is the anchor's opacity only while it is shown.
+        this._bindings = ['scale-x', 'scale-y', 'translation-x', 'translation-y']
             .map(property => anchor.bind_property(property, this._actor, property,
                 GObject.BindingFlags.SYNC_CREATE));
 
@@ -152,6 +155,7 @@ class Backdrop {
             [shape, 'notify::mapped', () => this.refresh()],
             [shape, 'style-changed', () => this.refresh()],
             [anchor, 'notify::visible', () => this._show()],
+            [anchor, 'notify::opacity', () => this._show()],
         ];
         // The surface going is the one thing that has to be heard here rather
         // than from the UI group: once a menu has been destroyed its actors
@@ -231,6 +235,15 @@ class Backdrop {
         this._backgrounds = [];
     }
 
+    /** What state the blur is in, for the one case that is worth reporting. */
+    describe() {
+        const box = this._shape.get_allocation_box();
+        return `wanted ${this._wanted}, shown ${this._actor?.visible}, ` +
+            `surface ${Math.round(box.get_width())}x${Math.round(box.get_height())} ` +
+            `(mapped ${this._shape.mapped}), anchor ${this._anchor.visible} at ` +
+            `${this._anchor.opacity}, ${this._content?.get_children().length} behind it`;
+    }
+
     /** The surface is being destroyed, and takes its blur with it. */
     _gone() {
         const onGone = this._onGone;
@@ -275,18 +288,39 @@ class Backdrop {
         this._show();
     }
 
-    _show() {
-        // Nothing is shown before it has a size: a visible actor that has not
-        // been given one yet is not on any of the stage's views, which Clutter
-        // complains about and which leaves it unable to ask for a frame.
-        const ready = this._wanted && this._anchor.visible && this._shape.has_allocation();
-        // And a copy of the desktop is only drawn while the desktop is drawn.
-        const visible = ready && (this._wallpaper || global.window_group.mapped);
+    isShown() {
+        return this._shown;
+    }
 
-        if (visible === this._actor.visible)
-            return;
-        this._actor.visible = visible;
-        if (visible)
+    /**
+     * Show or hide the blur by its opacity, and never by hiding the actor.
+     *
+     * An actor that has just been shown is waiting to be laid out, and Clutter
+     * cannot say which of the stage's views it is on until it has been: it says
+     * so in the log, and leaves the actor with no view and so with no way to
+     * ask to be painted. It is given one again when it is next allocated, which
+     * for a surface that keeps the same size and place, as the overview does,
+     * may be never: the overview then comes up over a plain background and
+     * stays that way until it is closed.
+     *
+     * At opacity zero the actor is laid out as always and simply not painted,
+     * so it is always on a view and always ready to be shown again.
+     */
+    _show() {
+        const box = this._shape.get_allocation_box();
+        const sized = box.get_width() > 0 && box.get_height() > 0;
+        const ready = this._wanted && this._anchor.visible && sized;
+        // A copy of the desktop is only drawn while the desktop itself is.
+        const shown = ready && (this._wallpaper || global.window_group.mapped);
+        const opacity = shown ? this._anchor.opacity : 0;
+
+        // Kept as a flag of its own, not read back from the actor: a menu that
+        // is opening is shown at an opacity of nothing, and asking the actor
+        // would never see it arrive.
+        const wasShown = this._shown;
+        this._shown = shown;
+        this._actor.opacity = opacity;
+        if (shown && !wasShown)
             this._place({restack: true});
     }
 
@@ -324,6 +358,15 @@ class Backdrop {
     }
 
     _placeNow() {
+        // A surface that has been taken off the stage without being destroyed
+        // takes its blur with it: left behind, the blur goes on being laid out
+        // in a branch that is no longer anywhere, which Clutter calls spurious
+        // and says so every time something asks the branch for a size.
+        if (!this._anchor.get_parent()) {
+            this._gone();
+            return;
+        }
+
         // Where the shape sits inside the anchor, which may be a few actors up
         // (a menu's content is in a bin inside its box pointer) and may be
         // sliding (the floating bar docks by moving under its own margin). The
@@ -378,6 +421,12 @@ export default class BlurExtension extends Extension {
         // only worth drawing while it is not.
         this._connect(global.window_group, 'notify::mapped', () => this._showAll());
         this._connect(Main.layoutManager, 'monitors-changed', () => this._rebuildAll());
+        // The overview is shown and hidden without being moved or resized, so
+        // little is said about it; and it is the one surface other extensions
+        // take a hand in. Asking it again as it opens costs a theme node and
+        // keeps it from standing on whichever signal happened to arrive.
+        this._connect(Main.overview, 'showing', () => this._refreshAll());
+        this._connect(Main.overview, 'shown', () => this._overviewShown());
 
         for (const actor of uiGroup.get_children())
             this._watch(actor);
@@ -443,6 +492,20 @@ export default class BlurExtension extends Extension {
     _showAll() {
         for (const backdrop of this._backdrops.values())
             backdrop._show();
+    }
+
+    _refreshAll() {
+        for (const backdrop of this._backdrops.values())
+            backdrop.refresh();
+    }
+
+    // The overview being up without its blur has been seen and not explained.
+    // It leaves a line behind if it happens again, rather than nothing to go on.
+    _overviewShown() {
+        this._refreshAll();
+        const backdrop = this._backdrops.get(Main.layoutManager.overviewGroup);
+        if (backdrop && !backdrop.isShown())
+            console.warn(`gattuccino: the overview is up without its blur (${backdrop.describe()})`);
     }
 
     _rebuildAll() {

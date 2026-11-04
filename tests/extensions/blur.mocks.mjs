@@ -180,7 +180,12 @@ class BlurEffect {
 const laters = new Map();
 let laterNext = 0;
 export const pendingLaters = () => laters.size;
-export function settle() { while (laters.size) for (const [id, callback] of [...laters]) { laters.delete(id); callback(); } }
+export function settle(limit = 100) {
+    for (let round = 0; laters.size; round++) {
+        if (round >= limit) throw new Error('the work queued for the end of the frame never settles');
+        for (const [id, callback] of [...laters]) { laters.delete(id); callback(); }
+    }
+}
 
 export const GLib = {PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false};
 export const Clutter = {Clone, ShaderEffect};
@@ -217,6 +222,7 @@ export const Background = {
 export const Main = {
     panel: null,
     layoutManager: null,
+    overview: null,
 };
 export class Extension {}
 
@@ -234,6 +240,7 @@ export function desktop() {
     uiGroup.add_child(panelBox);
 
     Main.panel = panel;
+    Main.overview = new Emitter();
     Main.layoutManager = Object.assign(new Emitter(), {
         uiGroup, panelBox, overviewGroup,
         monitors: [{index: 0, x: 0, y: 0, width: 1600, height: 900}],

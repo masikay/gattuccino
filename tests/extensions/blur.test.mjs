@@ -9,6 +9,11 @@ const Blur = await loadExtension('blur@gattuccino', 'blur.mocks.mjs');
 const THEME = {radius: 32, brightness: 1, alpha: 204, corners: [16, 16, 16, 16], border: 0};
 const reset = () => { state.theme = {...THEME}; };
 
+/** The blur shows and hides itself by its opacity, never by hiding the actor:
+ * an actor that has just been shown has no allocation, and Clutter then cannot
+ * say which of the stage's views it is on. */
+const shown = backdrop => backdrop.opacity > 0;
+
 /** The backdrop the extension put right behind `anchor`, if any. */
 function backdropOf(anchor) {
     const siblings = anchor.get_parent().get_children();
@@ -107,32 +112,32 @@ test('the top bar', async t => {
     await t.test('steps aside while the bar is solid, as nothing shows through it', () => {
         state.theme = {...THEME, alpha: 255};
         panel.emit('style-changed');
-        assert.equal(backdrop.visible, false);
+        assert.equal(shown(backdrop), false);
 
         // and while it has no background at all, as in the overview
         state.theme = {...THEME, alpha: 0};
         panel.emit('style-changed');
-        assert.equal(backdrop.visible, false);
+        assert.equal(shown(backdrop), false);
 
         reset();
         panel.emit('style-changed');
-        assert.equal(backdrop.visible, true);
+        assert.equal(shown(backdrop), true);
     });
 
     await t.test('does nothing at all with a theme that does not ask for it', () => {
         state.theme = {...THEME, radius: null};
         panel.emit('style-changed');
-        assert.equal(backdrop.visible, false);
+        assert.equal(shown(backdrop), false);
         reset();
         panel.emit('style-changed');
-        assert.equal(backdrop.visible, true);
+        assert.equal(shown(backdrop), true);
     });
 
     await t.test('hides with the bar', () => {
         panelBox.set({visible: false});
-        assert.equal(backdrop.visible, false);
+        assert.equal(shown(backdrop), false);
         panelBox.set({visible: true});
-        assert.equal(backdrop.visible, true);
+        assert.equal(shown(backdrop), true);
     });
 
     await t.test('takes everything of its own away again on disable', () => {
@@ -193,11 +198,11 @@ test('menus', async t => {
         content.mapped = false;
         uiGroup.add_child(top);
         const backdrop = backdropOf(pointer);
-        assert.equal(backdrop.visible, false);
+        assert.equal(shown(backdrop), false);
 
         content.mapped = true;
         content.emit('notify::mapped');
-        assert.equal(backdrop.visible, true);
+        assert.equal(shown(backdrop), true);
         assert.equal(backdrop.get_effect('blur').radius, 32);
     });
 
@@ -236,6 +241,21 @@ test('menus', async t => {
     // A menu that has been destroyed cannot be touched again at all, not even
     // to disconnect from it: the blur has to be taken down while it is still
     // alive, which is what its 'destroy' says.
+    // Clutter goes on laying out a branch that has been taken off the stage,
+    // and complains about every actor in it that is not its own.
+    await t.test('take their blur away with them when they are taken off the stage', () => {
+        const {top, pointer} = menu();
+        uiGroup.add_child(top);
+        settle();
+        const backdrop = backdropOf(pointer);
+        assert.ok(backdrop);
+
+        top._parent = null;        // off the stage, without a word to the UI group
+        pointer.set_position(1, 1);
+        settle();
+        assert.equal(backdrop.destroyed, true);
+    });
+
     await t.test('take their blur away with them when they are destroyed', () => {
         const {top, pointer} = menu();
         uiGroup.add_child(top);
@@ -266,7 +286,7 @@ test('the overview', async t => {
     await t.test('waits, hidden, for the overview to open', () => {
         assert.ok(backdrop);
         assert.equal(backdrop.name, 'gattuccino-blur');
-        assert.equal(backdrop.visible, false);
+        assert.equal(shown(backdrop), false);
     });
 
     await t.test('covers the screen behind it once it is open', () => {
@@ -274,26 +294,75 @@ test('the overview', async t => {
         overviewGroup.emit('notify::mapped');
         overviewGroup.set({visible: true});
         settle();
-        assert.equal(backdrop.visible, true);
+        assert.equal(shown(backdrop), true);
         assert.deepEqual([backdrop.x, backdrop.y, backdrop.width, backdrop.height], [0, 0, 1600, 900]);
         assert.equal(backdrop.get_effect('blur').radius, 32);
     });
 
     await t.test('waits for a size before it is shown at all', () => {
         overviewGroup.set({visible: false});
-        overviewGroup.allocated = false;
+        const [width, height] = [overviewGroup.width, overviewGroup.height];
+        overviewGroup.width = overviewGroup.height = 0;
         overviewGroup.set({visible: true});
-        assert.equal(backdrop.visible, false, 'shown before it had an allocation');
+        assert.equal(shown(backdrop), false, 'shown before it had a size');
 
-        overviewGroup.allocated = true;
-        overviewGroup.emit('notify::allocation');
+        overviewGroup.set_size(width, height);
         settle();
-        assert.equal(backdrop.visible, true);
+        assert.equal(shown(backdrop), true);
+    });
+
+    await t.test('says so if the overview is ever up without it', () => {
+        const said = [];
+        const warn = console.warn;
+        console.warn = message => said.push(message);
+        try {
+            overviewGroup.set({visible: true});
+            Main.overview.emit('shown');
+            assert.deepEqual(said, []);
+
+            state.theme = {...THEME, radius: null};
+            Main.overview.emit('shown');
+            assert.equal(said.length, 1);
+            assert.match(said[0], /overview is up without its blur \(wanted false/);
+        } finally {
+            console.warn = warn;
+            reset();
+        }
+    });
+
+    // Other extensions take a hand in the overview, and it is shown without
+    // being moved, so the Shell says little about it. It is asked again as it
+    // opens rather than left to stand on whichever signal arrived.
+    await t.test('is asked again every time the overview opens', () => {
+        overviewGroup.set({visible: false});
+        state.theme = {...THEME, radius: null};     // as if the theme had no blur
+        overviewGroup.mapped = true;
+        overviewGroup.emit('notify::mapped');
+        overviewGroup.set({visible: true});
+        assert.equal(shown(backdrop), false);
+
+        reset();                                    // and now it has
+        Main.overview.emit('showing');
+        settle();
+        assert.equal(shown(backdrop), true);
+    });
+
+    // The overview keeps the same box from one showing to the next, so nothing
+    // says it moved: whether the blur is shown cannot turn on a relayout being
+    // pending at that moment, or it stays hidden for the whole showing.
+    await t.test('comes back every time the overview is opened', () => {
+        for (let i = 0; i < 5; i++) {
+            overviewGroup.set({visible: false});
+            overviewGroup.allocated = false;          // a relayout is pending
+            overviewGroup.set({visible: true});
+            assert.equal(shown(backdrop), true, `opening ${i + 1}`);
+            overviewGroup.allocated = true;
+        }
     });
 
     await t.test('goes away with it', () => {
         overviewGroup.set({visible: false});
-        assert.equal(backdrop.visible, false);
+        assert.equal(shown(backdrop), false);
     });
 
     extension.disable();
@@ -309,14 +378,14 @@ test('a copy of the desktop', async t => {
     const overview = siblings()[siblings().indexOf(overviewGroup) - 1];
 
     await t.test('is not drawn while the desktop itself is not', () => {
-        assert.equal(bar.visible, true);
+        assert.equal(shown(bar), true);
 
         // What the Shell does while the overview is open
         windowGroup.set({mapped: false});
-        assert.equal(bar.visible, false);
+        assert.equal(shown(bar), false);
 
         windowGroup.set({mapped: true});
-        assert.equal(bar.visible, true);
+        assert.equal(shown(bar), true);
     });
 
     await t.test('is not what the overview uses: it has a wallpaper of its own', () => {
@@ -328,7 +397,7 @@ test('a copy of the desktop', async t => {
         overviewGroup.mapped = true;
         overviewGroup.emit('notify::mapped');
         overviewGroup.set({visible: true});
-        assert.equal(overview.visible, true);
+        assert.equal(shown(overview), true);
         windowGroup.set({mapped: true});
     });
 
