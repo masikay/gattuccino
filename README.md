@@ -198,7 +198,7 @@ The stylesheet of an extension outranks any Shell theme, whatever the theme says
 
 With `blur` on, the desktop is blurred behind the surfaces it shows through: the top bar, popup menus (panel menus, quick settings, the calendar), the overview and, with `dock-like-panel` on, the dock. It blurs whatever is actually behind them, windows included, and follows their shape, so the rounded ends of the floating bar and the rounded corners of a menu stay rounded.
 
-The overview is a surface like the others, with one difference: GNOME fills it with a solid color, so `blur` is what turns it into glass. It then shows the wallpaper behind it, dimmed a little so that the names under the application icons stay legible over a bright one. It gets a blur of its own for each monitor, rather than one across them all, an actor that spans two monitors being drawn once for each of them.
+The overview works differently from the other surfaces. GNOME fills it with a solid color, so `blur` is what turns it into glass, and what shows through is the wallpaper, dimmed a little so that the names under the application icons stay legible over a bright one. The wallpaper is the picture set in the desktop background settings, drawn behind the overview and blurred for each monitor, so windows are never part of it. A wallpaper that is a slideshow is not a single picture, so there the overview is left as GNOME makes it.
 
 `blur-overview` turns that part off on its own, leaving the overview the plain background GNOME gives it while the bar, menus and dock keep their blur. It is worth reaching for if the overview misbehaves on your machine: it changes only the theme, so it takes effect on `apply` without logging out.
 

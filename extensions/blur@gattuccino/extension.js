@@ -1,12 +1,12 @@
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
 import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
-import * as Background from 'resource:///org/gnome/shell/ui/background.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {BoxPointer} from 'resource:///org/gnome/shell/ui/boxpointer.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -29,9 +29,6 @@ const BACKDROP_NAME = 'gattuccino-blur';
 // A menu's content sits inside a bin inside its box pointer
 const POPUP_DEPTH = 3;
 
-// Frames to blur the copy again for while the overview opens: its own animation
-// is 250ms, which is 15 frames at 60Hz, with a margin for a slower machine.
-const OVERVIEW_FRAMES = 40;
 const DOCK_DEPTH = 5;
 
 // Every way a surface is moved or resized
@@ -119,23 +116,17 @@ const RoundedMaskEffect = GObject.registerClass({
  * menu opens with.
  */
 class Backdrop {
-    constructor(shape, anchor, {monitor = null, onGone = null} = {}) {
+    constructor(shape, anchor, {onGone = null} = {}) {
         this._shape = shape;
         this._anchor = anchor;
-        // A wallpaper backdrop belongs to one monitor and covers exactly it
-        this._monitor = monitor;
-        this._wallpaper = monitor !== null;
         this._onGone = onGone;
         this._wanted = false;
         this._shown = false;
         this._updateId = 0;
-        this._repaintId = 0;
-        this._repaintsLeft = 0;
         this._needsRestack = false;
-        this._backgrounds = [];
 
         this._actor = new St.Widget({name: BACKDROP_NAME, clip_to_allocation: true, opacity: 0});
-        this._content = this._wallpaper ? this._wallpaperContent() : this._desktopContent();
+        this._content = this._desktopContent();
         this._actor.add_child(this._content);
 
         // The mask is added first so that it is applied to the blurred copy,
@@ -158,12 +149,8 @@ class Backdrop {
         // own margin by a translation. Each of them is followed, as not all of
         // them change the allocation.
         const signals = [
-            // The overview is the size of the screen and stays there; following
-            // the actor would mean giving the blur a new size on every frame of
-            // the overview's own animation, each one undoing the Shell's layout
-            // in the middle of it.
-            ...(this._wallpaper ? [] : MOVED.map(signal => [shape, signal, () => this._place()])),
-            ...(this._wallpaper ? [] : MOVED.map(signal => [anchor, signal, () => this._place()])),
+            ...MOVED.map(signal => [shape, signal, () => this._place()]),
+            ...MOVED.map(signal => [anchor, signal, () => this._place()]),
             [shape, 'notify::mapped', () => this.refresh()],
             [shape, 'style-changed', () => this.refresh()],
             [anchor, 'notify::visible', () => this._show()],
@@ -190,48 +177,11 @@ class Backdrop {
         return this._anchor;
     }
 
-    get monitor() {
-        return this._monitor;
-    }
-
-    /**
-     * A wallpaper of this backdrop's own, for its monitor.
-     *
-     * The overview cannot use a copy of the desktop: the Shell hides the
-     * windows while it is open, and drawing a clone of a hidden actor makes
-     * Clutter map and unmap it again for every frame, which is enough to keep
-     * a session that has nothing else to do from settling. The windows are not
-     * on show in the overview anyway, so the wallpaper is what belongs there.
-     */
-    _wallpaperContent() {
-        const group = new Meta.BackgroundGroup();
-        const monitor = this._monitorRect();
-        if (!monitor)
-            return group;
-
-        const widget = new St.Widget({width: monitor.width, height: monitor.height});
-        group.add_child(widget);
-        this._backgrounds.push(new Background.BackgroundManager({
-            container: widget,
-            monitorIndex: monitor.index,
-            controlPosition: false,
-        }));
-        return group;
-    }
-
-    _monitorRect() {
-        return Main.layoutManager.monitors.find(monitor => monitor.index === this._monitor) ?? null;
-    }
-
     destroy() {
         const laters = global.compositor.get_laters();
         if (this._updateId) {
             laters.remove(this._updateId);
             this._updateId = 0;
-        }
-        if (this._repaintId) {
-            laters.remove(this._repaintId);
-            this._repaintId = 0;
         }
         for (const [object, id] of this._signals)
             object.disconnect(id);
@@ -239,35 +189,9 @@ class Backdrop {
         for (const binding of this._bindings)
             binding.unbind();
         this._bindings = [];
-        this._dropBackgrounds();
         this._actor.destroy();
         this._actor = null;
         this._content = null;
-    }
-
-    _dropBackgrounds() {
-        for (const background of this._backgrounds)
-            background.destroy();
-        this._backgrounds = [];
-    }
-
-    /** Whether anything will be painted: an actor on none of the stage's views
-     * is never asked for, however shown it says it is. */
-    isPainted() {
-        return this._shown && this._actor?.opacity > 0 &&
-            (this._actor.peek_stage_views?.().length ?? 1) > 0;
-    }
-
-    /** What state the blur is in, for the one case that is worth reporting. */
-    describe() {
-        const surface = this._shape.get_allocation_box();
-        const own = this._actor?.get_allocation_box();
-        return `wanted ${this._wanted}, shown ${this._shown} at ${this._actor?.opacity}, ` +
-            `on ${this._actor?.peek_stage_views?.().length ?? '?'} views, ` +
-            `surface ${Math.round(surface.get_width())}x${Math.round(surface.get_height())} ` +
-            `(mapped ${this._shape.mapped}), blur ` +
-            `${Math.round(own?.get_width() ?? 0)}x${Math.round(own?.get_height() ?? 0)}, ` +
-            `${this._content?.get_children().length} behind it`;
     }
 
     /** The surface is being destroyed, and takes its blur with it. */
@@ -314,39 +238,8 @@ class Backdrop {
         this._show();
     }
 
-    /** With a monitor each frame clock of its own, the end of the frame comes
-     * once per monitor and a count of frames runs out that much sooner. */
-    _frameClocks() {
-        return Math.max(Main.layoutManager.monitors?.length ?? 1, 1);
-    }
-
     isShown() {
         return this._shown;
-    }
-
-    /**
-     * Blur the copy again on each of the next `frames` frames.
-     *
-     * The blurred copy is kept in a texture of its own and made again only
-     * when something says it is out of date. While the overview opens nothing
-     * does: what is behind the glass has not changed, only what is in front of
-     * it. A texture kept from before then shows either nothing at all or a
-     * picture of an earlier frame, which is the ghost.
-     */
-    repaintFor(frames) {
-        this._repaintsLeft = Math.max(this._repaintsLeft, frames);
-        if (this._repaintId || !this._shown)
-            return;
-
-        this._repaintId = global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
-            this._blur.queue_repaint();
-            this._mask.queue_repaint();
-            this._actor?.queue_redraw();
-            if (--this._repaintsLeft > 0)
-                return GLib.SOURCE_CONTINUE;
-            this._repaintId = 0;
-            return GLib.SOURCE_REMOVE;
-        });
     }
 
     /**
@@ -373,15 +266,6 @@ class Backdrop {
      * answer with the size an actor would like to be, not the one it has, while
      * a relayout is pending. */
     _box() {
-        // A wallpaper backdrop covers its monitor, and moves only when it does.
-        // One for each, rather than one across them all: an actor that spans
-        // two of the stage's views is drawn once for each of them, and the
-        // overview, alone among these surfaces, is the width of the screen.
-        if (this._wallpaper) {
-            const monitor = this._monitorRect();
-            return monitor ? [monitor.x, monitor.y, monitor.width, monitor.height] : [0, 0, 0, 0];
-        }
-
         const anchorBox = this._anchor.get_allocation_box();
         let x = anchorBox.x1;
         let y = anchorBox.y1;
@@ -398,7 +282,7 @@ class Backdrop {
         const [, , width, height] = this._box();
         const ready = this._wanted && this._anchor.visible && width > 0 && height > 0;
         // A copy of the desktop is only drawn while the desktop itself is.
-        const shown = ready && (this._wallpaper || global.window_group.mapped);
+        const shown = ready && global.window_group.mapped;
         const opacity = shown ? this._anchor.opacity : 0;
 
         // Kept as a flag of its own, not read back from the actor: a menu that
@@ -407,13 +291,8 @@ class Backdrop {
         const wasShown = this._shown;
         this._shown = shown;
         this._actor.opacity = opacity;
-        if (shown && !wasShown) {
+        if (shown && !wasShown)
             this._place({restack: true});
-            // Coming into view with a texture made while nothing was painted
-            // is the grey background of the first frames of the overview.
-            if (this._wallpaper)
-                this.repaintFor(OVERVIEW_FRAMES * this._frameClocks());
-        }
     }
 
     /**
@@ -486,11 +365,9 @@ class Backdrop {
             this._actor.set_size(width, height);
 
         // Line the copy up with the screen it is a copy of
-        if (!this._wallpaper) {
-            const [stageX, stageY] = this._shape.get_transformed_position();
-            if (-stageX !== this._content.x || -stageY !== this._content.y)
-                this._content.set_position(-stageX, -stageY);
-        }
+        const [stageX, stageY] = this._shape.get_transformed_position();
+        if (-stageX !== this._content.x || -stageY !== this._content.y)
+            this._content.set_position(-stageX, -stageY);
 
         // Zoom about the same point as the anchor, so that the blur follows the
         // way a menu opens instead of appearing at full size
@@ -506,9 +383,138 @@ class Backdrop {
     }
 }
 
+const BACKGROUND_SCHEMA = 'org.gnome.desktop.background';
+const INTERFACE_SCHEMA = 'org.gnome.desktop.interface';
+
+// How GNOME's picture-options place a picture, as the stylesheet says it
+const PLACEMENT = {
+    zoom: 'background-size: cover; background-position: center;',
+    spanned: 'background-size: cover; background-position: center;',
+    scaled: 'background-size: contain; background-position: center;',
+    stretched: 'background-size: 100% 100%;',
+    centered: 'background-position: center;',
+    wallpaper: 'background-position: 0 0;',
+};
+
+/**
+ * What the overview is glass over, blurred: the wallpaper, one widget for each
+ * monitor, behind the overview and in front of nothing else.
+ *
+ * It is the picture itself, drawn as any widget draws one. Copying the Shell's
+ * own wallpaper actor into a blur was tried first, and that actor is not made
+ * to be drawn into a buffer of somebody else's: what came out was a grey
+ * background, the icons of an earlier frame, or the windows of the desktop.
+ *
+ * The widgets stay where they are and are shown by their opacity, never hidden
+ * (see Backdrop._show), and the picture is loaded long before it is needed.
+ * A wallpaper that is not a single picture (a slideshow) has no blur: it is
+ * left to the Shell, and so to the overview's own color.
+ */
+class OverviewWallpaper {
+    constructor() {
+        this._widgets = [];
+        this._shown = false;
+        this._background = new Gio.Settings({schema_id: BACKGROUND_SCHEMA});
+        this._interface = new Gio.Settings({schema_id: INTERFACE_SCHEMA});
+        this._signals = [];
+        for (const [settings, key] of [
+            [this._background, 'changed'], [this._interface, 'changed::color-scheme']])
+            this._signals.push([settings, settings.connect(key, () => this.rebuild())]);
+        this.rebuild();
+    }
+
+    destroy() {
+        for (const [settings, id] of this._signals)
+            settings.disconnect(id);
+        this._signals = [];
+        this._drop();
+    }
+
+    _drop() {
+        for (const widget of this._widgets)
+            widget.destroy();
+        this._widgets = [];
+    }
+
+    /** The widgets for the monitors and the picture there are now. */
+    rebuild() {
+        this._drop();
+        const style = this._style();
+        if (!style)
+            return;
+
+        const uiGroup = Main.layoutManager.uiGroup;
+        const overview = Main.layoutManager.overviewGroup;
+        for (const monitor of Main.layoutManager.monitors) {
+            const widget = new St.Widget({
+                name: BACKDROP_NAME,
+                style,
+                x: monitor.x,
+                y: monitor.y,
+                width: monitor.width,
+                height: monitor.height,
+                clip_to_allocation: true,
+                opacity: 0,
+            });
+            widget.add_effect_with_name('blur', new Shell.BlurEffect({mode: Shell.BlurMode.ACTOR}));
+            uiGroup.insert_child_below(widget, overview);
+            this._widgets.push(widget);
+        }
+        if (this._shown)
+            this.show();
+    }
+
+    _style() {
+        const dark = this._interface.get_string('color-scheme') === 'prefer-dark';
+        let uri = dark ? this._background.get_string('picture-uri-dark') : '';
+        uri ||= this._background.get_string('picture-uri');
+        const options = this._background.get_string('picture-options');
+        const color = this._background.get_string('primary-color') || '#000000';
+
+        let style = `background-color: ${color};`;
+        if (options !== 'none') {
+            // A slideshow is an XML file listing pictures, not a picture
+            if (!uri || uri.endsWith('.xml'))
+                return null;
+            style += ` background-image: url("${uri}"); ${PLACEMENT[options] ?? PLACEMENT.zoom}`;
+        }
+        return style;
+    }
+
+    show() {
+        this._shown = true;
+        const overview = Main.layoutManager.overviewGroup;
+        if (!overview.mapped)
+            return;
+
+        const node = overview.get_theme_node();
+        const [hasRadius, radius] = node.lookup_length(RADIUS_PROPERTY, false);
+        const [hasBrightness, brightness] = node.lookup_double(BRIGHTNESS_PROPERTY, false);
+        const wanted = hasRadius && radius > 0;
+
+        const uiGroup = Main.layoutManager.uiGroup;
+        for (const widget of this._widgets) {
+            widget.get_effect('blur').set({
+                radius: Math.round(radius),
+                brightness: hasBrightness ? brightness : 1,
+            });
+            // Kept right behind the overview, whatever has been added since
+            uiGroup.set_child_below_sibling(widget, overview);
+            widget.opacity = wanted ? 255 : 0;
+        }
+    }
+
+    hide() {
+        this._shown = false;
+        for (const widget of this._widgets)
+            widget.opacity = 0;
+    }
+}
+
 export default class BlurExtension extends Extension {
     enable() {
-        this._backdrops = new Set();   // one for each surface, and for each monitor of the overview
+        this._backdrops = new Set();   // one for each surface
+        this._wallpaper = new OverviewWallpaper();   // what the overview is glass over
         this._signals = [];
 
         const uiGroup = Main.layoutManager.uiGroup;
@@ -517,7 +523,6 @@ export default class BlurExtension extends Extension {
         // The desktop is hidden while the overview is open, and a copy of it is
         // only worth drawing while it is not.
         this._connect(global.window_group, 'notify::mapped', () => this._showAll());
-        this._connect(Main.layoutManager, 'monitors-changed', () => this._rebuildAll());
         // The overview is shown and hidden without being moved or resized, so
         // little is said about it; and it is the one surface other extensions
         // take a hand in. Asking it again as it opens costs a theme node and
@@ -529,10 +534,11 @@ export default class BlurExtension extends Extension {
             () => this._refreshAll());
         this._connect(Main.overview, 'showing', () => {
             this._refreshAll();
-            this._repaintAll();
+            this._wallpaper.show();
         });
-        this._connect(Main.overview, 'hiding', () => this._repaintAll());
-        this._connect(Main.overview, 'shown', () => this._overviewShown());
+        this._connect(Main.overview, 'shown', () => this._wallpaper.show());
+        this._connect(Main.overview, 'hidden', () => this._wallpaper.hide());
+        this._connect(Main.layoutManager, 'monitors-changed', () => this._wallpaper.rebuild());
 
         for (const actor of uiGroup.get_children())
             this._watch(actor);
@@ -546,6 +552,8 @@ export default class BlurExtension extends Extension {
         for (const backdrop of this._backdrops)
             backdrop.destroy();
         this._backdrops = null;
+        this._wallpaper.destroy();
+        this._wallpaper = null;
     }
 
     _connect(object, signal, callback) {
@@ -562,13 +570,10 @@ export default class BlurExtension extends Extension {
             this._add(Main.panel, actor);
             return;
         }
-        // The overview is one surface of its own: it fills the screen, and the
-        // theme turns the solid color GNOME gives it into glass.
-        if (actor === Main.layoutManager.overviewGroup) {
-            for (const monitor of Main.layoutManager.monitors)
-                this._add(actor, actor, {monitor: monitor.index});
+        // The overview is not given a surface of its own: its wallpaper is
+        // blurred instead, as it opens.
+        if (actor === Main.layoutManager.overviewGroup)
             return;
-        }
         if (actor.name === DOCK_CONTAINER) {
             const dock = findByStyleClass(actor, DOCK_SHAPE, DOCK_DEPTH);
             if (dock)
@@ -589,17 +594,17 @@ export default class BlurExtension extends Extension {
         }
     }
 
-    _add(shape, anchor, {monitor = null} = {}) {
-        if (!anchor || !anchor.get_parent() || this._find(anchor, monitor))
+    _add(shape, anchor) {
+        if (!anchor || !anchor.get_parent() || this._find(anchor))
             return;
         const backdrop = new Backdrop(shape, anchor,
-            {monitor, onGone: () => this._backdrops.delete(backdrop)});
+            {onGone: () => this._backdrops.delete(backdrop)});
         this._backdrops.add(backdrop);
     }
 
-    _find(anchor, monitor = null) {
+    _find(anchor) {
         for (const backdrop of this._backdrops) {
-            if (backdrop.anchor === anchor && backdrop.monitor === monitor)
+            if (backdrop.anchor === anchor)
                 return backdrop;
         }
         return null;
@@ -610,38 +615,9 @@ export default class BlurExtension extends Extension {
             backdrop._show();
     }
 
-    // For as long as the overview takes to open or close, and a little over
-    _repaintAll() {
-        for (const backdrop of this._backdrops)
-            backdrop.repaintFor(OVERVIEW_FRAMES * Math.max(Main.layoutManager.monitors.length, 1));
-    }
-
     _refreshAll() {
         for (const backdrop of this._backdrops)
             backdrop.refresh();
-    }
-
-    // The overview being up without its blur has been seen and not explained.
-    // It leaves a line behind if it happens again, rather than nothing to go on.
-    _overviewShown() {
-        this._refreshAll();
-        this._repaintAll();
-        for (const backdrop of this._backdrops) {
-            if (backdrop.anchor === Main.layoutManager.overviewGroup && !backdrop.isPainted())
-                console.warn(`gattuccino: the overview is up without its blur (${backdrop.describe()})`);
-        }
-    }
-
-    // The monitors changed: the overview has one backdrop for each of them, so
-    // they are made afresh rather than mended.
-    _rebuildAll() {
-        for (const backdrop of [...this._backdrops]) {
-            if (backdrop.monitor === null)
-                continue;
-            this._backdrops.delete(backdrop);
-            backdrop.destroy();
-        }
-        this._watch(Main.layoutManager.overviewGroup);
     }
 }
 

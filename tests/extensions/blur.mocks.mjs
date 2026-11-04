@@ -132,6 +132,11 @@ export class Actor extends Emitter {
 
     add_effect_with_name(name, effect) { this._effects.set(name, effect); effect.actor = this; }
     get_effect(name) { return this._effects.get(name) ?? null; }
+    remove_effect(effect) {
+        for (const [name, kept] of this._effects) {
+            if (kept === effect) this._effects.delete(name);
+        }
+    }
 
     bind_property(sourceProperty, target, targetProperty) {
         const binding = new Binding(this, sourceProperty, target, targetProperty);
@@ -197,6 +202,18 @@ export function settle(limit = 100) {
 export const GLib = {PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false, SOURCE_CONTINUE: true};
 export const Clutter = {Clone, ShaderEffect};
 export const Cogl = {SnippetHook: {FRAGMENT: 2048}, Snippet: {new: (hook, declarations, post) => ({hook, declarations, post})}};
+export const gsettings = {
+    'picture-uri': 'file:///usr/share/backgrounds/wall.jpg',
+    'picture-uri-dark': 'file:///usr/share/backgrounds/wall-dark.jpg',
+    'picture-options': 'zoom',
+    'primary-color': '#123456',
+    'color-scheme': 'default',
+};
+export const Gio = {
+    Settings: class Settings extends Emitter {
+        get_string(key) { return gsettings[key] ?? ''; }
+    },
+};
 export const Shell = {BlurEffect, BlurMode: {ACTOR: 0, BACKGROUND: 1}};
 export const Meta = {BackgroundGroup: class BackgroundGroup extends Actor {}, LaterType: {RESIZE: 0, BEFORE_REDRAW: 4}};
 export const themeContext = new Emitter();
@@ -253,6 +270,8 @@ export function desktop() {
     Main.layoutManager = Object.assign(new Emitter(), {
         uiGroup, panelBox, overviewGroup,
         monitors: [{index: 0, x: 0, y: 0, width: 1600, height: 900}],
+        // The wallpaper the Shell draws for each monitor
+        _bgManagers: [{backgroundActor: new Actor({name: 'wallpaper 0', width: 1600, height: 900})}],
     });
     globalThis.global = {
         window_group: windowGroup,

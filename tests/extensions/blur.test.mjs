@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
-import {Actor, Main, backdropsIn, backgrounds, desktop, menu, settle, state, themeContext} from './blur.mocks.mjs';
+import {Actor, Main, backdropsIn, desktop, gsettings, menu, settle, state, themeContext} from './blur.mocks.mjs';
 
 const Blur = await loadExtension('blur@gattuccino', 'blur.mocks.mjs');
 
@@ -34,7 +34,7 @@ test('the top bar', async t => {
         // Behind the bar, so that the color of the bar is drawn over it
         assert.equal(uiGroup.get_children().indexOf(backdrop), uiGroup.get_children().indexOf(panelBox) - 1);
         assert.equal(backdrop.get_children()[0].source, global.window_group);
-        // one for the bar and one for the overview, and nothing else
+        // the bar's and the overview's wallpaper, and nothing else
         assert.equal(backdropsIn(uiGroup).length, 2);
     });
 
@@ -305,126 +305,82 @@ test('the overview', async t => {
     const {uiGroup, overviewGroup} = desktop();
     const extension = new Blur();
     extension.enable();
-    const siblings = () => uiGroup.get_children();
-    const backdrop = siblings()[siblings().indexOf(overviewGroup) - 1];
-
-    await t.test('waits, hidden, for the overview to open', () => {
-        assert.ok(backdrop);
-        assert.equal(backdrop.name, 'gattuccino-blur');
-        assert.equal(shown(backdrop), false);
-    });
-
-    await t.test('covers the screen behind it once it is open', () => {
+    const wallpapers = () => backdropsIn(uiGroup).filter(widget => widget.style);
+    const open = () => {
+        overviewGroup.set({visible: true});
         overviewGroup.mapped = true;
-        overviewGroup.emit('notify::mapped');
-        overviewGroup.set({visible: true});
-        settle();
-        assert.equal(shown(backdrop), true);
-        assert.deepEqual([backdrop.x, backdrop.y, backdrop.width, backdrop.height], [0, 0, 1600, 900]);
-        assert.equal(backdrop.get_effect('blur').radius, 32);
-    });
-
-    // The overview is the size of the screen whatever the actor says, and is
-    // never followed about: giving the blur a new size on every frame of the
-    // overview's own animation undoes the Shell's layout in the middle of it.
-    await t.test('takes the size of the screen, not of the actor', () => {
-        overviewGroup.set({visible: false});
-        overviewGroup.width = overviewGroup.height = 0;
-        overviewGroup.set({visible: true});
-        settle();
-        assert.equal(shown(backdrop), true);
-        assert.deepEqual([backdrop.x, backdrop.y, backdrop.width, backdrop.height], [0, 0, 1600, 900]);
-    });
-
-    await t.test('says so if the overview is ever up without it', () => {
-        const said = [];
-        const warn = console.warn;
-        console.warn = message => said.push(message);
-        try {
-            overviewGroup.set({visible: true});
-            Main.overview.emit('shown');
-            assert.deepEqual(said, []);
-
-            state.theme = {...THEME, radius: null};
-            Main.overview.emit('shown');
-            assert.equal(said.length, 1);
-            assert.match(said[0], /overview is up without its blur \(wanted false/);
-
-            // and the same if it is shown but on none of the stage's views,
-            // which is the one way left for it to be there and never painted
-            reset();
-            Main.overview.emit('shown');
-            assert.equal(said.length, 1);
-            backdrop.views = [];
-            Main.overview.emit('shown');
-            assert.equal(said.length, 2);
-            assert.match(said[1], /on 0 views/);
-            backdrop.views = null;
-        } finally {
-            console.warn = warn;
-            reset();
-        }
-    });
-
-    // The blurred copy is kept in a texture and made again only when something
-    // says it is out of date; while the overview opens, nothing does.
-    await t.test('is blurred again while the overview opens', () => {
-        overviewGroup.set({visible: true});
-        settle();
-        const before = backdrop.get_effect('blur').repaints;
-
         Main.overview.emit('showing');
-        settle();
-        const after = backdrop.get_effect('blur').repaints;
-        assert.ok(after > before + 10, `blurred again ${after - before} times`);
+    };
+
+    await t.test('has the wallpaper of each monitor right behind it, unseen until it opens', () => {
+        assert.equal(wallpapers().length, 1);
+        const [wallpaper] = wallpapers();
+        const siblings = uiGroup.get_children();
+        assert.equal(siblings.indexOf(wallpaper), siblings.indexOf(overviewGroup) - 1);
+        assert.deepEqual([wallpaper.x, wallpaper.y, wallpaper.width, wallpaper.height], [0, 0, 1600, 900]);
+        assert.match(wallpaper.style, /background-image: url\("file:\/\/\/usr\/share\/backgrounds\/wall.jpg"\)/);
+        assert.match(wallpaper.style, /background-size: cover/);
+        assert.equal(wallpaper.opacity, 0);
     });
 
-    // Other extensions take a hand in the overview, and it is shown without
-    // being moved, so the Shell says little about it. It is asked again as it
-    // opens rather than left to stand on whichever signal arrived.
-    await t.test('is asked again every time the overview opens', () => {
-        overviewGroup.set({visible: false});
-        state.theme = {...THEME, radius: null};     // as if the theme had no blur
-        overviewGroup.mapped = true;
-        overviewGroup.emit('notify::mapped');
-        overviewGroup.set({visible: true});
-        assert.equal(shown(backdrop), false);
-
-        reset();                                    // and now it has
-        Main.overview.emit('showing');
-        settle();
-        assert.equal(shown(backdrop), true);
+    await t.test('is blurred and shown as the overview opens', () => {
+        open();
+        const [wallpaper] = wallpapers();
+        assert.equal(wallpaper.opacity, 255);
+        assert.equal(wallpaper.get_effect('blur').radius, 32);
+        assert.equal(wallpaper.get_effect('blur').mode, 0);
     });
 
-    // The overview keeps the same box from one showing to the next, so nothing
-    // says it moved: whether the blur is shown cannot turn on a relayout being
-    // pending at that moment, or it stays hidden for the whole showing.
-    await t.test('comes back every time the overview is opened', () => {
-        for (let i = 0; i < 5; i++) {
-            overviewGroup.set({visible: false});
-            overviewGroup.allocated = false;          // a relayout is pending
-            overviewGroup.set({visible: true});
-            assert.equal(shown(backdrop), true, `opening ${i + 1}`);
-            overviewGroup.allocated = true;
-        }
+    await t.test('goes again once it has closed', () => {
+        Main.overview.emit('hidden');
+        assert.equal(wallpapers()[0].opacity, 0);
     });
 
-    await t.test('goes away with it', () => {
-        overviewGroup.set({visible: false});
-        assert.equal(shown(backdrop), false);
+    await t.test('is not shown when the theme does not ask for a blur', () => {
+        state.theme = {...THEME, radius: null};
+        open();
+        assert.equal(wallpapers()[0].opacity, 0);
+        Main.overview.emit('hidden');
+        reset();
     });
 
-    extension.disable();
+    await t.test('follows the monitors, one each', () => {
+        Main.layoutManager.monitors = [
+            {index: 0, x: 0, y: 0, width: 1600, height: 900},
+            {index: 1, x: 1600, y: 0, width: 1280, height: 1024},
+        ];
+        Main.layoutManager.emit('monitors-changed');
+        assert.equal(wallpapers().length, 2);
+        assert.deepEqual([wallpapers()[1].x, wallpapers()[1].width], [1600, 1280]);
+    });
+
+    await t.test('has none for a wallpaper that is a slideshow', () => {
+        gsettings['picture-uri'] = 'file:///usr/share/backgrounds/slides.xml';
+        Main.layoutManager.emit('monitors-changed');
+        assert.equal(wallpapers().length, 0);
+        gsettings['picture-uri'] = 'file:///usr/share/backgrounds/wall.jpg';
+    });
+
+    await t.test('takes the dark picture when the style is dark', () => {
+        gsettings['color-scheme'] = 'prefer-dark';
+        Main.layoutManager.emit('monitors-changed');
+        assert.match(wallpapers()[0].style, /wall-dark.jpg/);
+        gsettings['color-scheme'] = 'default';
+    });
+
+    await t.test('is given up on disable', () => {
+        extension.disable();
+        assert.equal(backdropsIn(uiGroup).length, 0);
+    });
 });
 
 test('a copy of the desktop', async t => {
     reset();
-    const {uiGroup, windowGroup, panelBox, overviewGroup} = desktop();
+    const {uiGroup, windowGroup, panelBox} = desktop();
     const extension = new Blur();
     extension.enable();
     const siblings = () => uiGroup.get_children();
     const bar = siblings()[siblings().indexOf(panelBox) - 1];
-    const overview = siblings()[siblings().indexOf(overviewGroup) - 1];
 
     await t.test('is not drawn while the desktop itself is not', () => {
         assert.equal(shown(bar), true);
@@ -437,32 +393,7 @@ test('a copy of the desktop', async t => {
         assert.equal(shown(bar), true);
     });
 
-    await t.test('is not what the overview uses: it has a wallpaper of its own', () => {
-        assert.equal(overview.get_children()[0].source, undefined);
-        assert.equal(backgrounds.filter(b => b.alive).length, 1);   // one monitor, one wallpaper
-
-        // which is why the overview keeps its blur while the desktop is hidden
-        windowGroup.set({mapped: false});
-        overviewGroup.mapped = true;
-        overviewGroup.emit('notify::mapped');
-        overviewGroup.set({visible: true});
-        assert.equal(shown(overview), true);
-        windowGroup.set({mapped: true});
-    });
-
-    await t.test('follows the monitors when they change', () => {
-        Main.layoutManager.monitors = [
-            {index: 0, x: 0, y: 0, width: 1600, height: 900},
-            {index: 1, x: 1600, y: 0, width: 1280, height: 1024},
-        ];
-        Main.layoutManager.emit('monitors-changed');
-        assert.equal(backgrounds.filter(b => b.alive).length, 2);
-    });
-
-    await t.test('is given up on disable', () => {
-        extension.disable();
-        assert.equal(backgrounds.filter(b => b.alive).length, 0);
-    });
+    extension.disable();
 });
 
 test('the dock', async t => {
