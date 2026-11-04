@@ -81,16 +81,26 @@ class ShellThemeTest(unittest.TestCase):
 
     def test_no_blur_unless_asked_for(self):
         self.assertNotIn("gattuccino-blur", self.build())
-        self.assertNotIn("gattuccino-blur", self.build(blur="no", blur_radius=40))
+        self.assertNotIn("gattuccino-blur", self.build(blur=False, blur_radius=40))
+
+    def test_blur_leaves_the_colors_of_the_surfaces_alone(self):
+        options = dict(panel_opacity=0.8, popup_opacity=0.8, floating_panel=True,
+                       docked_panel_opacity=0.9, dock_like_panel=True)
+        plain = rules(self.build(**options))
+        blurred = rules(self.build(blur=True, **options))
+        for surface in ("#panel", ".popup-menu-content", "#panel.docked-panel",
+                        "#dashtodockContainer #dash .dash-background"):
+            self.assertEqual(blurred[surface]["background-color"],
+                             plain[surface]["background-color"], surface)
 
     def test_blur_states_what_the_extension_should_blur(self):
-        r = rules(self.build(blur="plain", blur_radius=40, panel_opacity=0.8, popup_opacity=0.8))
+        r = rules(self.build(blur=True, blur_radius=40, panel_opacity=0.8, popup_opacity=0.8))
         for surface in ("#panel", ".popup-menu-content"):
             self.assertEqual(r[surface]["-gattuccino-blur-radius"], "40px", surface)
             self.assertEqual(r[surface]["-gattuccino-blur-brightness"], "1", surface)
         # the dock only has them when the theme styles the dock at all
         self.assertNotIn("#dashtodockContainer #dash .dash-background", r)
-        r = rules(self.build(blur="plain", dock_like_panel=True))
+        r = rules(self.build(blur=True, dock_like_panel=True))
         self.assertEqual(r["#dashtodockContainer #dash .dash-background"]["-gattuccino-blur-radius"], "32px")
 
         # plain glass leaves the colors of the surfaces as they are
@@ -100,40 +110,12 @@ class ShellThemeTest(unittest.TestCase):
         plain = rules(self.build())
         self.assertEqual(plain["#overviewGroup"], {"background-color": "#1e1e2e"})
 
-        r = rules(self.build(blur="plain", blur_radius=30))
+        r = rules(self.build(blur=True, blur_radius=30))
         self.assertEqual(r["#overviewGroup"]["background-color"], "rgba(30, 30, 46, 0.6)")
-        # a whole screen takes twice the blur of a bar, and a little dimming
-        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-radius"], "60px")
+        # the same blur as everywhere else, with a little dimming of its own
+        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-radius"], "30px")
         self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-brightness"], "0.8")
         self.assertEqual(r["#panel"]["-gattuccino-blur-brightness"], "1")
-
-        # frosted glass brightens this one too, from where it stands
-        f = rules(self.build(blur="frosted", blur_radius=30))
-        self.assertEqual(f["#overviewGroup"]["-gattuccino-blur-brightness"], "0.896")
-        self.assertNotEqual(f["#overviewGroup"]["background-color"], r["#overviewGroup"]["background-color"])
-
-    def test_frosted_glass_is_milkier_than_plain_glass(self):
-        plain = rules(self.build(blur="plain", panel_opacity=0.8, popup_opacity=0.8,
-                                 floating_panel=True, docked_panel_opacity=0.9, dock_like_panel=True))
-        frosted = rules(self.build(blur="frosted", panel_opacity=0.8, popup_opacity=0.8,
-                                   floating_panel=True, docked_panel_opacity=0.9, dock_like_panel=True))
-
-        # the blurred copy is brightened
-        self.assertEqual(frosted["#panel"]["-gattuccino-blur-brightness"], "1.12")
-
-        # and a little white goes into every surface the desktop shows through
-        for surface in ("#panel", ".popup-menu-content", "#panel.docked-panel",
-                        "#dashtodockContainer #dash .dash-background"):
-            self.assertNotEqual(frosted[surface]["background-color"],
-                                plain[surface]["background-color"], surface)
-        self.assertEqual(plain["#panel"]["background-color"], "rgba(17, 17, 27, 0.8)")
-        self.assertEqual(frosted["#panel"]["background-color"], "rgba(41, 41, 50, 0.8)")
-
-    def test_frosted_glass_leaves_solid_surfaces_alone(self):
-        # Nothing is blurred behind a solid surface, so there is no glass to frost
-        r = rules(self.build(blur="frosted", panel_opacity=0.8, floating_panel=True, docked_panel_opacity=1.0))
-        self.assertEqual(r["#panel.docked-panel"]["background-color"], "#11111b")
-        self.assertEqual(rules(self.build(blur="frosted"))["#panel"]["background-color"], "#11111b")
 
     def test_accent_selection(self):
         accent, fg = palette.color("mocha", "teal"), palette.color("mocha", "base")

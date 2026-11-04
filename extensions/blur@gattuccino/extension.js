@@ -42,14 +42,13 @@ const CORNERS = [St.Corner.TOPLEFT, St.Corner.TOPRIGHT, St.Corner.BOTTOMRIGHT, S
 // the surface's border, which is drawn around the fill and not over it, so the
 // blur stops where the fill does and the two corners sit on top of each other.
 const MASK_DECLARATIONS = `
-uniform float width;
-uniform float height;
+uniform vec2 offscreen;
+uniform vec2 size;
 uniform float inset;
 uniform vec4 corners;
 `;
 const MASK_SOURCE = `
-vec2 size = vec2(width, height);
-vec2 from_center = cogl_tex_coord0_in.st * size - size * 0.5;
+vec2 from_center = cogl_tex_coord0_in.st * offscreen - offscreen * 0.5;
 float radius = from_center.x < 0.0
     ? (from_center.y < 0.0 ? corners.x : corners.w)
     : (from_center.y < 0.0 ? corners.y : corners.z);
@@ -89,9 +88,17 @@ const RoundedMaskEffect = GObject.registerClass({
     vfunc_paint_target(node, paintContext) {
         const box = this.get_actor().get_allocation_box();
         const [width, height] = [box.get_width(), box.get_height()];
+        // What is painted here is an offscreen copy, and Clutter makes it a
+        // few pixels larger than the actor. Its texture coordinates therefore
+        // span more than the actor does, which on a bar 32 pixels tall is a
+        // tenth of its height: the shape has to be measured in the copy's own
+        // pixels, with the actor's box centered in it, or its corners come out
+        // somewhere else entirely.
+        const [known, textureWidth, textureHeight] = this.get_target_size();
         const limit = Math.min(width, height) / 2;
-        this.set_uniform_value('width', floatValue(width));
-        this.set_uniform_value('height', floatValue(height));
+        this.set_uniform_float('offscreen', 2,
+            known ? [textureWidth, textureHeight] : [width, height]);
+        this.set_uniform_float('size', 2, [width, height]);
         this.set_uniform_value('inset', floatValue(Math.min(this._inset, limit)));
         this.set_uniform_float('corners', 4, this._corners.map(radius => Math.min(radius, limit)));
         super.vfunc_paint_target(node, paintContext);
@@ -114,7 +121,8 @@ class Backdrop {
         this._wallpaper = wallpaper;
         this._onGone = onGone;
         this._wanted = false;
-        this._restackId = 0;
+        this._updateId = 0;
+        this._needsRestack = false;
         this._backgrounds = [];
 
         this._actor = new St.Widget({name: BACKDROP_NAME, clip_to_allocation: true});
@@ -201,9 +209,9 @@ class Backdrop {
     }
 
     destroy() {
-        if (this._restackId) {
-            global.compositor.get_laters().remove(this._restackId);
-            this._restackId = 0;
+        if (this._updateId) {
+            global.compositor.get_laters().remove(this._updateId);
+            this._updateId = 0;
         }
         for (const [object, id] of this._signals)
             object.disconnect(id);
@@ -279,26 +287,43 @@ class Backdrop {
             return;
         this._actor.visible = visible;
         if (visible)
-            this._queueRestack();
+            this._place({restack: true});
     }
 
-    // A menu is raised to the top of its parent as it opens, which would leave
-    // its blur behind, under whatever the menu is now above. The raise is done
-    // once the menu has been shown, so this follows at the end of the frame.
-    _queueRestack() {
-        if (this._restackId)
+    /**
+     * Moving and restacking the backdrop both belong at the end of the frame,
+     * never in the middle of one.
+     *
+     * Most of what says a surface has moved is said while the Shell is laying
+     * it out, and giving an actor a new size and place from inside that starts
+     * another layout within the one going on. In the overview, where there is a
+     * great deal to lay out, that showed as the app grid being painted several
+     * times over, slightly out of step with itself.
+     *
+     * A menu is also raised to the top of its parent as it opens, which would
+     * leave its blur behind it; the raise is done once the menu has been shown,
+     * so this has to follow it rather than lead it.
+     */
+    _place({restack = false} = {}) {
+        this._needsRestack ||= restack;
+        if (this._updateId)
             return;
 
-        this._restackId = global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
-            this._restackId = 0;
-            const parent = this._anchor.get_parent();
-            if (parent && this._actor?.get_parent() === parent)
-                parent.set_child_below_sibling(this._actor, this._anchor);
+        this._updateId = global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
+            this._updateId = 0;
+            const restackNow = this._needsRestack;
+            this._needsRestack = false;
+            this._placeNow();
+            if (restackNow) {
+                const parent = this._anchor.get_parent();
+                if (parent && this._actor?.get_parent() === parent)
+                    parent.set_child_below_sibling(this._actor, this._anchor);
+            }
             return GLib.SOURCE_REMOVE;
         });
     }
 
-    _place() {
+    _placeNow() {
         // Where the shape sits inside the anchor, which may be a few actors up
         // (a menu's content is in a bin inside its box pointer) and may be
         // sliding (the floating bar docks by moving under its own margin). The

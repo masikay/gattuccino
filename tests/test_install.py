@@ -41,7 +41,7 @@ class InstallTest(unittest.TestCase):
         home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
         out = home.ok("configure", "--flavor", "mocha", "--accent", "follow", "--popup-opacity", "0.8",
                       "--panel-opacity", "0.7", "--floating-panel", "--docked-panel-opacity", "1",
-                      "--dock-like-panel", "--blur", "frosted", "--blur-radius", "24", "--flatpak", "--apply")
+                      "--dock-like-panel", "--blur", "--blur-radius", "24", "--flatpak", "--apply")
         self.assertEqual(self.themes(), sorted(f"gattuccino-{f}-{a}" for f in ("latte", "mocha")
                                                for a in palette.SETTINGS_ACCENTS.values()))
         self.assertIn(palette.color("latte", "mauve"),
@@ -52,7 +52,7 @@ class InstallTest(unittest.TestCase):
         self.assertIn("#panel.docked-panel", css)
         self.assertIn("#dashtodockContainer #dash .dash-background", css)
         self.assertIn("-gattuccino-blur-radius: 24px", css)   # read by the blur extension
-        self.assertIn("rgba(53, 53, 67, 0.8)", css)   # the popups, milky with the frosted glass
+        self.assertIn("rgba(30, 30, 46, 0.8)", css)   # the popups, in the theme's own color
         self.assertNotIn("st-accent", css)
         self.assertIn(SHELL_VERSION, home.read(f"{home.themes}/gattuccino-mocha-mauve/{shell_theme.MARKER}"))
         self.assertEqual(home.settings(USER_THEME, "name"), "gattuccino-mocha-teal")
@@ -95,7 +95,7 @@ class InstallTest(unittest.TestCase):
         # --- Light style in Settings: Latte; Frappe for the dark style, one fixed accent, no floating bar ---
         home.set_setting(INTERFACE, "color-scheme", "default")
         home.ok("configure", "--flavor", "frappe", "--accent", "peach", "--no-floating-panel",
-                "--no-dock-like-panel", "--blur", "no", "--apply")
+                "--no-dock-like-panel", "--no-blur", "--apply")
         self.assertEqual(self.themes(), ["gattuccino-frappe-peach", "gattuccino-latte-peach"])
         self.assertEqual(home.settings(USER_THEME, "name"), "gattuccino-latte-peach")
         css = home.read(f"{home.themes}/gattuccino-latte-peach/gnome-shell/gnome-shell.css")

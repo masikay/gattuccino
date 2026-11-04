@@ -6,7 +6,7 @@ import {Actor, Main, backdropsIn, backgrounds, desktop, menu, settle, state} fro
 
 const Blur = await loadExtension('blur@gattuccino', 'blur.mocks.mjs');
 
-const THEME = {radius: 32, brightness: 1.12, alpha: 204, corners: [16, 16, 16, 16], border: 0};
+const THEME = {radius: 32, brightness: 1, alpha: 204, corners: [16, 16, 16, 16], border: 0};
 const reset = () => { state.theme = {...THEME}; };
 
 /** The backdrop the extension put right behind `anchor`, if any. */
@@ -34,6 +34,7 @@ test('the top bar', async t => {
     });
 
     await t.test('covers exactly the bar', () => {
+        settle();   // the backdrop is placed at the end of the frame, never in the middle of one
         assert.deepEqual([backdrop.x, backdrop.y, backdrop.width, backdrop.height], [6, 6, 1588, 32]);
         // The copy is lined up with the screen it is a copy of
         assert.deepEqual(backdrop.get_children()[0].get_size ? [backdrop.get_children()[0].x, backdrop.get_children()[0].y] : [], [-6, -6]);
@@ -41,20 +42,29 @@ test('the top bar', async t => {
 
     await t.test('takes the blur from the theme', () => {
         assert.equal(backdrop.get_effect('blur').radius, 32);
-        assert.equal(backdrop.get_effect('blur').brightness, 1.12);
+        assert.equal(backdrop.get_effect('blur').brightness, 1);
         assert.equal(backdrop.get_effect('blur').mode, 0);   // of the actor it is given, not of the screen
+
     });
 
     await t.test('cuts it to the corners of the bar', () => {
+        settle();
         const mask = backdrop.get_effect('mask');
         mask.get_actor = () => backdrop;
         mask.vfunc_paint_target(null, null);
         assert.deepEqual(mask.uniforms.corners.values, [16, 16, 16, 16]);
-        assert.equal(mask.uniforms.width.value, 1588);
+
+        // The shape is measured in the pixels of the copy it is painted
+        // through, which is a little larger than the bar, with the bar's own
+        // size given separately: measured in the bar's own pixels, its corners
+        // would be stretched by the difference.
+        assert.deepEqual(mask.uniforms.size.values, [1588, 32]);
+        assert.deepEqual(mask.uniforms.offscreen.values, [1591, 35]);
 
         // Never more than half the smaller side, or the shape would fold over
         state.theme = {...THEME, corners: [999, 999, 999, 999]};
         panel.emit('style-changed');
+        settle();
         mask.vfunc_paint_target(null, null);
         assert.deepEqual(mask.uniforms.corners.values, [16, 16, 16, 16]);
         reset();
@@ -64,16 +74,34 @@ test('the top bar', async t => {
     await t.test('follows the bar as it slides between floating and docked', () => {
         panel.translation_y = -6;
         panel.emit('notify::translation-y');
+        settle();
         assert.deepEqual([backdrop.x, backdrop.y], [6, 0]);
         panel.translation_y = 0;
         panel.emit('notify::translation-y');
+        settle();
         assert.deepEqual([backdrop.x, backdrop.y], [6, 6]);
 
         panel.set_size(1600, 32);
         panel.set_position(0, 0);
+        settle();
         assert.deepEqual([backdrop.x, backdrop.y, backdrop.width], [0, 0, 1600]);
         panel.set_position(6, 6);
         panel.set_size(1588, 32);
+        settle();
+    });
+
+    // Most of what says a surface has moved is said while the Shell is laying
+    // it out, and moving an actor from inside that lays out again within the
+    // layout going on, which the overview showed as the app grid painted
+    // several times over, slightly out of step with itself.
+    await t.test('is never moved in the middle of a layout', () => {
+        panel.set_position(10, 12);
+        assert.deepEqual([backdrop.x, backdrop.y], [6, 6], 'moved while the bar was being laid out');
+
+        settle();
+        assert.deepEqual([backdrop.x, backdrop.y], [10, 12]);
+        panel.set_position(6, 6);
+        settle();
     });
 
     await t.test('steps aside while the bar is solid, as nothing shows through it', () => {
@@ -128,6 +156,7 @@ test('menus', async t => {
             const {top, pointer, content} = menu({wrapped});
             uiGroup.add_child(top);
 
+            settle();
             const backdrop = backdropOf(pointer);
             assert.ok(backdrop, `no backdrop (wrapped: ${wrapped})`);
             // A sibling of the box pointer: it is what the menu is animated by
@@ -145,6 +174,7 @@ test('menus', async t => {
 
         pointer.pivot_point = {x: 0.5, y: 0};
         pointer.set({opacity: 0, scale_x: 0.96, scale_y: 0.96, translation_y: -6});
+        settle();
         assert.equal(backdrop.opacity, 0);
         assert.equal(backdrop.scale_x, 0.96);
         assert.equal(backdrop.translation_y, -6);
@@ -243,6 +273,7 @@ test('the overview', async t => {
         overviewGroup.mapped = true;
         overviewGroup.emit('notify::mapped');
         overviewGroup.set({visible: true});
+        settle();
         assert.equal(backdrop.visible, true);
         assert.deepEqual([backdrop.x, backdrop.y, backdrop.width, backdrop.height], [0, 0, 1600, 900]);
         assert.equal(backdrop.get_effect('blur').radius, 32);
@@ -256,6 +287,7 @@ test('the overview', async t => {
 
         overviewGroup.allocated = true;
         overviewGroup.emit('notify::allocation');
+        settle();
         assert.equal(backdrop.visible, true);
     });
 
@@ -329,6 +361,7 @@ test('the dock', async t => {
         container.add_child(dash);
         uiGroup.add_child(container);
 
+        settle();
         const backdrop = backdropOf(container);
         assert.ok(backdrop, 'no backdrop');
         assert.deepEqual([backdrop.x, backdrop.y, backdrop.width, backdrop.height], [504, 802, 600, 80]);

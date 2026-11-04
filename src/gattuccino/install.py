@@ -14,7 +14,7 @@ import time
 
 from . import gtk_theme, palette, shell_theme, sources
 from .desktop import INTERFACE_SCHEMA, USER_THEME_SCHEMA, USER_THEME_UUID, Desktop
-from .preferences import AUTO, NO_BLUR, Preferences
+from .preferences import AUTO, Preferences
 
 # install.py is src/gattuccino/install.py: three levels up is the repo root.
 EXTENSIONS_SOURCE = os.path.join(
@@ -390,7 +390,7 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
     wanted = {
         FLOATING_PANEL_UUID: preferences.shell_theme and preferences.floating_panel,
         # The theme says what to blur; without the theme there is nothing to read
-        BLUR_UUID: preferences.shell_theme and preferences.blur != NO_BLUR,
+        BLUR_UUID: preferences.shell_theme and preferences.blur,
         # Follows the style, and the accent when asked to, for whichever of the two is installed
         ACCENT_UUID: preferences.shell_theme or preferences.gtk_theme,
     }

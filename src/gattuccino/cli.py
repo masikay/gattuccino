@@ -26,7 +26,7 @@ def _option(name: str) -> str:
 
 def _add_preference_options(parser):
     for name, spec in prefs.SPECS.items():
-        if spec.parse is prefs._boolean:
+        if spec.values == "yes, no":
             parser.add_argument(_option(name), dest=name, default=None,
                                 action=argparse.BooleanOptionalAction, help=spec.help)
         else:
@@ -47,7 +47,7 @@ def _ask(preferences):
     for name, spec in prefs.SPECS.items():
         if name in prefs.FLOATING_ONLY and not preferences.floating_panel:
             continue
-        if name in prefs.BLUR_ONLY and preferences.blur == prefs.NO_BLUR:
+        if name in prefs.BLUR_ONLY and not preferences.blur:
             continue
         while True:
             try:

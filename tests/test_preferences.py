@@ -52,6 +52,10 @@ class PreferencesTest(unittest.TestCase):
         with open(self.path, "w") as f:
             f.write("[preferences]\nflavor = latte\n")   # from an earlier version: latte is now always there
         self.assertEqual(prefs.load(self.path).flavor, "mocha")
+        for written in ("plain", "frosted"):   # from an earlier version: both meant blur
+            with open(self.path, "w") as f:
+                f.write(f"[preferences]\nblur = {written}\n")
+            self.assertIs(prefs.load(self.path).blur, True, written)
         with open(self.path, "w") as f:
             f.write("[preferences]\nflavour = frappe\n")
         with self.assertRaisesRegex(prefs.PreferenceError, "unknown preference 'flavour'"):

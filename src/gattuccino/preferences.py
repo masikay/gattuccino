@@ -14,9 +14,9 @@ HELP_ACCENT_SELECTION = (
 
 FOLLOW = "follow"  # accent: whatever is picked in Settings > Appearance
 AUTO = "auto"      # shell_version: the installed GNOME Shell
-# blur: plain glass is only blurred, frosted glass is milky with it
-NO_BLUR, PLAIN_BLUR, FROSTED_BLUR = "no", "plain", "frosted"
-BLUR_KINDS = (NO_BLUR, PLAIN_BLUR, FROSTED_BLUR)
+# blur was once offered in two kinds, plain and frosted; frosted is gone, and
+# both of the words an earlier version wrote in the file still mean yes
+LEGACY_BLUR_KINDS = ("plain", "frosted")
 
 
 class PreferenceError(Exception):
@@ -31,6 +31,12 @@ def _opacity(text: str) -> float:
     if not 0 <= value <= 1:
         raise PreferenceError("expected a number between 0 (invisible) and 1 (opaque)")
     return value
+
+
+def _blur(text: str) -> bool:
+    if text.strip().lower() in LEGACY_BLUR_KINDS:
+        return True
+    return _boolean(text)
 
 
 def _boolean(text: str) -> bool:
@@ -123,9 +129,8 @@ SPECS = {
                                  none_as="same"),
     "dock_like_panel": Spec(_boolean, "yes, no",
                             "Give the dock of Dash to Dock or Ubuntu Dock the color and opacity of the top bar"),
-    "blur": Spec(_choice(*BLUR_KINDS), ", ".join(BLUR_KINDS),
-                 "Blur the desktop behind the top bar, popup menus, the overview and the dock; "
-                 "'frosted' makes the glass milkier"),
+    "blur": Spec(_blur, "yes, no",
+                 "Blur the desktop behind the top bar, popup menus, the overview and the dock"),
     "blur_radius": Spec(_pixels(100), "0 to 100", "How far the blur reaches, in pixels"),
     "shell_version": Spec(_shell_version, f"{AUTO}, or a version such as 49.2",
                           f"GNOME Shell version to build the theme for; '{AUTO}' detects it"),
@@ -152,7 +157,7 @@ class Preferences:
     panel_radius: Optional[int] = None
     docked_panel_opacity: Optional[float] = None
     dock_like_panel: bool = False
-    blur: str = NO_BLUR
+    blur: bool = False
     blur_radius: int = 32
     shell_version: str = AUTO
 

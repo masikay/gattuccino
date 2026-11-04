@@ -15,7 +15,7 @@ class Emitter {
 export const state = {
     // What a theme node answers: the blur properties, the background alpha, the
     // corner radii of the surface and the width of its border.
-    theme: {radius: 32, brightness: 1.12, alpha: 204, corners: [16, 16, 16, 16], border: 0},
+    theme: {radius: 32, brightness: 1, alpha: 204, corners: [16, 16, 16, 16], border: 0},
 };
 
 class ThemeNode {
@@ -162,6 +162,8 @@ export class BoxPointer extends Actor {}
 
 class ShaderEffect {
     constructor() { this.uniforms = {}; this.repaints = 0; }
+    /** Clutter paints the effect through a copy a few pixels larger than the actor. */
+    get_target_size() { const actor = this.get_actor(); return [true, actor.width + 3, actor.height + 3]; }
     vfunc_paint_target() {}
     set_uniform_value(name, value) { this.uniforms[name] = value; }
     set_uniform_float(name, components, values) { this.uniforms[name] = {components, values}; }
