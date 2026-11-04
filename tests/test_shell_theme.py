@@ -83,11 +83,20 @@ class ShellThemeTest(unittest.TestCase):
         self.assertNotIn("gattuccino-blur", self.build())
         self.assertNotIn("gattuccino-blur", self.build(blur=False, blur_radius=40))
 
-    def test_the_overview_can_be_left_out_of_the_blur(self):
-        r = rules(self.build(blur=True, blur_overview=False))
+    def test_the_background_can_be_left_out_of_the_blur(self):
+        r = rules(self.build(blur=True, blur_background=False))
         self.assertEqual(r["#panel"]["-gattuccino-blur-radius"], "32px")
-        # GNOME's own solid background is left on it, so there is nothing to see through
+        # GNOME's own solid background is left on the overview, so there is nothing to see through
         self.assertEqual(r["#overviewGroup"], {"background-color": "#1e1e2e"})
+        self.assertNotIn("-gattuccino-blur-radius", r.get(".screen-shield-background", {}))
+
+    def test_the_background_has_a_blur_of_its_own(self):
+        r = rules(self.build(blur=True, blur_radius=40, blur_background_radius=12))
+        self.assertEqual(r["#panel"]["-gattuccino-blur-radius"], "40px")
+        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-radius"], "12px")
+        # the lock screen says only how far: the Shell's own dimming stays
+        self.assertEqual(r[".screen-shield-background"]["-gattuccino-blur-radius"], "12px")
+        self.assertNotIn("-gattuccino-blur-brightness", r[".screen-shield-background"])
 
     def test_blur_leaves_the_colors_of_the_surfaces_alone(self):
         options = dict(panel_opacity=0.8, popup_opacity=0.8, floating_panel=True,
@@ -116,9 +125,9 @@ class ShellThemeTest(unittest.TestCase):
         plain = rules(self.build())
         self.assertEqual(plain["#overviewGroup"], {"background-color": "#1e1e2e"})
 
-        r = rules(self.build(blur=True, blur_radius=30))
+        r = rules(self.build(blur=True, blur_background_radius=30))
         self.assertEqual(r["#overviewGroup"]["background-color"], "rgba(30, 30, 46, 0.6)")
-        # the same blur as everywhere else, with a little dimming of its own
+        # a little dimming of its own
         self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-radius"], "30px")
         self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-brightness"], "0.8")
         self.assertEqual(r["#panel"]["-gattuccino-blur-brightness"], "1")

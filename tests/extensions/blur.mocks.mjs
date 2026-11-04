@@ -120,6 +120,8 @@ export class Actor extends Emitter {
         return [x, y];
     }
     queue_redraw() { this._redraws++; }
+    hide() { this.visible = false; }
+    show() { this.visible = true; }
     /** Which of the stage's views the actor is on: none means never painted. */
     peek_stage_views() { return this.views ?? [1]; }
 
@@ -199,7 +201,20 @@ export function settle(limit = 100) {
     }
 }
 
-export const GLib = {PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false, SOURCE_CONTINUE: true};
+export const GLib = {
+    PRIORITY_DEFAULT: 0, SOURCE_REMOVE: false, SOURCE_CONTINUE: true,
+    // The idle moment comes when the test says so (see `idle`)
+    idle_add(_priority, callback) { const id = ++idleNext; idles.set(id, callback); return id; },
+    Source: {remove(id) { idles.delete(id); }},
+};
+const idles = new Map();
+let idleNext = 0;
+export function idle() {
+    for (const [id, callback] of [...idles]) {
+        idles.delete(id);
+        callback();
+    }
+}
 export const Clutter = {Clone, ShaderEffect};
 export const Cogl = {SnippetHook: {FRAGMENT: 2048}, Snippet: {new: (hook, declarations, post) => ({hook, declarations, post})}};
 export const gsettings = {
@@ -209,9 +224,16 @@ export const gsettings = {
     'primary-color': '#123456',
     'color-scheme': 'default',
 };
+export const GdkPixbuf = {
+    // Every picture is 3200 by 1800, unless a test says otherwise
+    Pixbuf: {get_file_info: () => [{}, ...(sizes.picture ?? [3200, 1800])]},
+};
+export const sizes = {};
 export const Gio = {
+    File: {new_for_uri: uri => ({get_path: () => uri.replace('file://', '')})},
     Settings: class Settings extends Emitter {
-        get_string(key) { return gsettings[key] ?? ''; }
+        constructor(properties) { super(); this.schema_id = properties.schema_id; }
+        get_string(key) { return gsettings[`${this.schema_id}:${key}`] ?? gsettings[key] ?? ''; }
     },
 };
 export const Shell = {BlurEffect, BlurMode: {ACTOR: 0, BACKGROUND: 1}};
@@ -246,6 +268,7 @@ export const Background = {
 };
 
 export const Main = {
+    screenShield: null,
     panel: null,
     layoutManager: null,
     overview: null,
@@ -266,6 +289,7 @@ export function desktop() {
     uiGroup.add_child(panelBox);
 
     Main.panel = panel;
+    Main.screenShield = {_lockDialogGroup: new Actor({name: 'lockDialogGroup'}), _dialog: null};
     Main.overview = new Emitter();
     Main.layoutManager = Object.assign(new Emitter(), {
         uiGroup, panelBox, overviewGroup,

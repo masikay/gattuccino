@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
-import {Actor, Main, backdropsIn, desktop, gsettings, menu, settle, state, themeContext} from './blur.mocks.mjs';
+import {Actor, Main, Shell, backdropsIn, desktop, gsettings, idle, menu, sizes, settle, state, themeContext} from './blur.mocks.mjs';
 
 const Blur = await loadExtension('blur@gattuccino', 'blur.mocks.mjs');
 
@@ -319,7 +319,8 @@ test('the overview', async t => {
         assert.equal(siblings.indexOf(wallpaper), siblings.indexOf(overviewGroup) - 1);
         assert.deepEqual([wallpaper.x, wallpaper.y, wallpaper.width, wallpaper.height], [0, 0, 1600, 900]);
         assert.match(wallpaper.style, /background-image: url\("file:\/\/\/usr\/share\/backgrounds\/wall.jpg"\)/);
-        assert.match(wallpaper.style, /background-size: cover/);
+        // zoomed to cover the monitor and centered: a 3200 by 1800 picture on 1600 by 900 is half the size
+        assert.match(wallpaper.style, /background-size: 1600px 900px; background-position: 0px 0px;/);
         assert.equal(wallpaper.opacity, 0);
     });
 
@@ -363,8 +364,18 @@ test('the overview', async t => {
             assert.match(picture.style, /wall.jpg/);
             assert.deepEqual([picture.width, picture.height], [2880, 1024]);
             assert.deepEqual([picture.x, picture.y], [monitor ? -1600 : 0, 0]);
+            // covering all the monitors together, centered: 3200 by 1800 on 2880 by 1024
+            assert.match(picture.style, /background-size: 2880px 1620px; background-position: 0px -298px;/);
         }
         gsettings['picture-options'] = 'zoom';
+    });
+
+    await t.test('centers a picture that is wider than the monitor', () => {
+        sizes.picture = [4000, 1800];
+        Main.layoutManager.monitors = [{index: 0, x: 0, y: 0, width: 1600, height: 900}];
+        Main.layoutManager.emit('monitors-changed');
+        assert.match(wallpapers()[0].style, /background-size: 2000px 900px; background-position: -200px 0px;/);
+        delete sizes.picture;
     });
 
     await t.test('has none for a wallpaper that is a slideshow', () => {
@@ -384,6 +395,115 @@ test('the overview', async t => {
     await t.test('is given up on disable', () => {
         extension.disable();
         assert.equal(backdropsIn(uiGroup).length, 0);
+    });
+});
+
+test('the lock screen', async t => {
+    reset();
+    desktop();
+    const extension = new Blur();
+    extension.enable();
+    const lockGroup = Main.screenShield._lockDialogGroup;
+
+    /** What the Shell builds when the screen is locked: a dialog, with a
+     * background of one widget for each monitor, holding its own wallpaper */
+    const lock = () => {
+        const dialog = new Actor({name: 'unlockDialog'});
+        dialog._backgroundGroup = new Actor({});
+        for (const monitor of Main.layoutManager.monitors) {
+            const widget = new Actor({x: monitor.x, y: monitor.y, width: monitor.width, height: monitor.height});
+            widget.add_child(new Actor({name: 'shell wallpaper'}));
+            widget.add_effect_with_name('blur', new Shell.BlurEffect({radius: 90, brightness: 0.65}));
+            dialog._backgroundGroup.add_child(widget);
+        }
+        lockGroup.add_child(dialog);
+        idle();
+        return dialog;
+    };
+
+    await t.test('is given the picture of the desktop, not the Shell wallpaper', () => {
+        const dialog = lock();
+        const [widget] = dialog._backgroundGroup.get_children();
+        assert.match(widget.style, /background-image: url\("file:\/\/\/usr\/share\/backgrounds\/wall.jpg"\)/);
+        assert.equal(widget.get_children()[0].visible, false);
+        assert.match(widget.style, /background-color: #123456;/);
+    });
+
+    await t.test('is blurred as much as the other surfaces, not as much as the Shell would', () => {
+        const dialog = lock();
+        const [widget] = dialog._backgroundGroup.get_children();
+        assert.equal(widget.get_effect('blur').radius, 32);
+        assert.equal(widget.get_effect('blur').brightness, 0.65);
+    });
+
+    await t.test('is left as the Shell makes it when the theme does not ask for a blur', () => {
+        state.theme = {...THEME, radius: null};
+        themeContext.emit('changed');
+        const dialog = lock();
+        const [widget] = dialog._backgroundGroup.get_children();
+        assert.ok(!widget.style);
+        assert.equal(widget.get_effect('blur').radius, 90);
+        assert.notEqual(widget.get_children()[0].visible, false);
+        reset();
+        themeContext.emit('changed');
+    });
+
+    // The lock screen runs with GNOME's own stylesheet, which says nothing of
+    // the blur: what the theme asked for is what it asked for at the desktop
+    await t.test('goes by what the theme asked for before the screen was locked', () => {
+        Main.sessionMode = {isLocked: true};
+        state.theme = {...THEME, radius: null};
+        themeContext.emit('changed');
+        const dialog = lock();
+        const [widget] = dialog._backgroundGroup.get_children();
+        assert.equal(widget.get_effect('blur').radius, 32);
+        assert.match(widget.style, /wall.jpg/);
+        delete Main.sessionMode;
+        reset();
+    });
+
+    await t.test('follows a wallpaper that changes while it is locked', () => {
+        const dialog = lock();
+        gsettings['picture-uri'] = 'file:///usr/share/backgrounds/other.jpg';
+        extension._settings._signals[0][0].emit('changed');
+        const [widget] = dialog._backgroundGroup.get_children();
+        assert.match(widget.style, /other.jpg/);
+        gsettings['picture-uri'] = 'file:///usr/share/backgrounds/wall.jpg';
+    });
+
+    await t.test('leaves the Shell wallpaper alone for a slideshow', () => {
+        gsettings['picture-uri'] = 'file:///usr/share/backgrounds/slides.xml';
+        const dialog = lock();
+        const [widget] = dialog._backgroundGroup.get_children();
+        assert.ok(!widget.style);
+        assert.notEqual(widget.get_children()[0].visible, false);
+        gsettings['picture-uri'] = 'file:///usr/share/backgrounds/wall.jpg';
+    });
+
+    // Each monitor shows its own part of a wallpaper that spans them
+    await t.test('gives each monitor its own part of a spanned wallpaper', () => {
+        gsettings['picture-options'] = 'spanned';
+        Main.layoutManager.monitors = [
+            {index: 0, x: 0, y: 0, width: 1600, height: 900},
+            {index: 1, x: 1600, y: 0, width: 1280, height: 1024},
+        ];
+        const dialog = lock();
+        const [first, second] = dialog._backgroundGroup.get_children();
+        const [left] = first.get_children().filter(child => child.style);
+        const [right] = second.get_children().filter(child => child.style);
+        assert.deepEqual([left.x, right.x], [0, -1600]);
+        assert.deepEqual([left.width, right.width], [2880, 2880]);
+        gsettings['picture-options'] = 'zoom';
+        Main.layoutManager.monitors = [{index: 0, x: 0, y: 0, width: 1600, height: 900}];
+    });
+
+    await t.test('gives the Shell wallpaper back on disable', () => {
+        const dialog = lock();
+        const [widget] = dialog._backgroundGroup.get_children();
+        extension.disable();
+        assert.ok(!widget.style);
+        assert.notEqual(widget.get_children()[0].visible, false);
+        assert.equal(widget.get_effect('blur').radius, 90);
     });
 });
 

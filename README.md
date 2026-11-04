@@ -63,9 +63,10 @@ Every preference is an option of `configure`, and a line in `~/.config/gattuccin
 | `--panel-radius` | `round`, or `0` to `100` | `round` | Corner radius of the floating bar, in pixels |
 | `--docked-panel-opacity` | `same`, or `0` to `1` | `same` | Opacity of the floating bar while docked |
 | `--dock-like-panel` / `--no-dock-like-panel` | | off | Give the dock of Dash to Dock or Ubuntu Dock the color and opacity of the top bar |
-| `--blur` / `--no-blur` | | off | Blur the desktop behind the top bar, popup menus, the overview and the dock |
-| `--blur-radius` | `0` to `100` | `32` | How far the blur reaches, in pixels |
-| `--blur-overview` / `--no-blur-overview` | | on | Blur the desktop behind the overview as well |
+| `--blur` / `--no-blur` | | off | Blur the desktop behind the top bar, popup menus and the dock, and the wallpaper behind the overview and on the lock screen |
+| `--blur-radius` | `0` to `100` | `32` | How far the blur behind the top bar, menus and dock reaches, in pixels |
+| `--blur-background` / `--no-blur-background` | | on | Blur the wallpaper behind the overview and on the lock screen |
+| `--blur-background-radius` | `0` to `100` | `32` | How far the blur of that wallpaper reaches, in pixels (GNOME's own on the lock screen is 90) |
 | `--shell-version` | `auto`, or a version | `auto` | GNOME Shell version to build the theme for |
 
 The accents are `rosewater`, `flamingo`, `pink`, `mauve`, `red`, `maroon`, `peach`, `yellow`, `green`, `teal`, `sky`, `sapphire`, `blue` and `lavender`.
@@ -200,9 +201,9 @@ With `blur` on, the desktop is blurred behind the surfaces it shows through: the
 
 The overview works differently from the other surfaces. GNOME fills it with a solid color, so `blur` is what turns it into glass, and what shows through is the wallpaper, dimmed a little so that the names under the application icons stay legible over a bright one. The wallpaper is the picture set in the desktop background settings, drawn behind the overview and blurred for each monitor, so windows are never part of it. A wallpaper that is a slideshow is not a single picture, so there the overview is left as GNOME makes it.
 
-`blur-overview` turns that part off on its own, leaving the overview the plain background GNOME gives it while the bar, menus and dock keep their blur. It is worth reaching for if the overview misbehaves on your machine: it changes only the theme, so it takes effect on `apply` without logging out.
+`blur-background` turns that part off on its own, and with it the lock screen's, leaving both as GNOME makes them while the bar, menus and dock keep their blur. It is worth reaching for if the overview misbehaves on your machine: it changes only the theme, so it takes effect on `apply` without logging out. `blur-background-radius` sizes the blur of the overview and of the lock screen by itself, apart from `blur-radius`, which is for the bar, the menus and the dock.
 
-`blur-radius` says how far the blur reaches, 32 pixels by default; a larger radius is softer and shows less of what is behind. The colors of the surfaces are the theme's and are not touched: the blur is behind them, and changes nothing in front of them.
+`blur-radius` says how far the blur behind the bar, menus and dock reaches, 32 pixels by default; a larger radius is softer and shows less of what is behind. The colors of the surfaces are the theme's and are not touched: the blur is behind them, and changes nothing in front of them.
 
 Blur is only worth anything where something shows through, so `blur` goes with `panel-opacity` and `popup-opacity` below 1. A surface that is solid is left alone, which means the floating bar is blurred while it floats and not once it has docked, if `docked-panel-opacity` is 1. The bar in the overview, where GNOME paints no background at all, is left alone too.
 
@@ -232,7 +233,7 @@ If your distribution's version has no upstream release of the same name, set the
 
 ## Limits
 
-- The login screen is not themed. The lock screen keeps GNOME's look too, as GNOME Shell disables extensions there.
+- The login screen is not themed. The lock screen keeps GNOME's look too, with one exception: with `blur` and `blur-background` on, the blur extension also runs while the screen is locked, and gives the lock screen's blurred background (the clock and the password prompt share it) the wallpaper picture in place of the Shell's own, which has been seen to come up black, blurred by `blur-background-radius`. Its dimming stays GNOME's.
 - Buttons and cards inside translucent popups stay solid, so that they remain readable. Notification banners, on-screen displays, the window switcher and dialogs are not translucent.
 - GTK 3 applications only follow with the adw-gtk3 theme. Qt, Electron and Firefox do not use these colors at all.
 - With `accent-selection` on, GTK 3 applications get the accent on menu items and on hovered sidebar rows, but not on the selected row: GTK 3 stylesheets cannot match one.

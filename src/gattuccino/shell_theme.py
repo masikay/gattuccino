@@ -49,7 +49,8 @@ class ShellOptions:
     accent_selection: bool = False
     blur: bool = False
     blur_radius: int = 32
-    blur_overview: bool = True
+    blur_background: bool = True
+    blur_background_radius: int = 32
 
 
 def theme_name(flavor: str, accent: str) -> str:
@@ -384,31 +385,34 @@ def _apply_blur(sass_dir: str, options: ShellOptions):
     can be stated once and for all: the bar in the overview, or a solid docked
     bar, has nothing to show through it and is not blurred.
     """
-    # Each surface, and how bright the blurred copy behind it is left
+    # Each surface, how far it is blurred and how bright the blurred copy
+    # behind it is left
     surfaces = [
-        ("#panel", 1),                # the top bar, floating or docked
-        (".popup-menu-content", 1),   # panel menus, quick settings, the calendar
+        ("#panel", options.blur_radius, 1),                # the top bar, floating or docked
+        (".popup-menu-content", options.blur_radius, 1),   # panel menus, quick settings, the calendar
     ]
-    if options.blur_overview:
+    if options.dock_like_panel:
+        surfaces.append(("#dashtodockContainer #dash .dash-background", options.blur_radius, 1))
+    if options.blur_background:
         # The overview is a whole screen rather than a pane held up to the eye,
         # and takes a little dimming so that the names under the application
         # icons stay legible over a bright wallpaper.
-        surfaces.append(("#overviewGroup", OVERVIEW_DIM))
-    if options.dock_like_panel:
-        surfaces.append(("#dashtodockContainer #dash .dash-background", 1))
+        surfaces.append(("#overviewGroup", options.blur_background_radius, OVERVIEW_DIM))
+        # The wallpaper behind the lock screen, which the Shell blurs and
+        # dims by itself: only how far is said, and its own dimming is kept.
+        surfaces.append((".screen-shield-background", options.blur_background_radius, None))
 
-    # GNOME fills the overview with a solid color: make it glass, so that there
-    # is something to blur behind it. Everything else is translucent already,
-    # by the opacity preferences.
-    if options.blur_overview:
+        # GNOME fills the overview with a solid color: make it glass, so that
+        # there is something to blur behind it. Everything else is translucent
+        # already, by the opacity preferences.
         _replace_once(f"{sass_dir}/widgets/_overview.scss", "background-color: $system_base_color;",
                       f"background-color: {_transparent('$system_base_color', OVERVIEW_OPACITY)};")
 
     rules = "".join(f"""
 {surface} {{
-  -gattuccino-blur-radius: {options.blur_radius}px;
-  -gattuccino-blur-brightness: {brightness:g};
-}}""" for surface, brightness in surfaces)
+  -gattuccino-blur-radius: {radius}px;""" + (f"""
+  -gattuccino-blur-brightness: {brightness:g};""" if brightness is not None else "") + """
+}""" for surface, radius, brightness in surfaces)
 
     # Last of all the widgets, so that nothing of GNOME's own can come after it
     with open(f"{sass_dir}/_widgets.scss", "a", encoding="utf-8") as f:

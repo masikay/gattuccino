@@ -74,7 +74,8 @@ def shell_options(preferences: Preferences) -> shell_theme.ShellOptions:
         accent_selection=preferences.accent_selection,
         blur=preferences.blur,
         blur_radius=preferences.blur_radius,
-        blur_overview=preferences.blur_overview,
+        blur_background=preferences.blur_background,
+        blur_background_radius=preferences.blur_background_radius,
     )
 
 

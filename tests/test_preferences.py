@@ -57,6 +57,9 @@ class PreferencesTest(unittest.TestCase):
                 f.write(f"[preferences]\nblur = {written}\n")
             self.assertIs(prefs.load(self.path).blur, True, written)
         with open(self.path, "w") as f:
+            f.write("[preferences]\nblur_overview = no\n")   # from an earlier version: the overview alone
+        self.assertIs(prefs.load(self.path).blur_background, False)
+        with open(self.path, "w") as f:
             f.write("[preferences]\nflavour = frappe\n")
         with self.assertRaisesRegex(prefs.PreferenceError, "unknown preference 'flavour'"):
             prefs.load(self.path)

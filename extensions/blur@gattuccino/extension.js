@@ -1,5 +1,6 @@
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
+import GdkPixbuf from 'gi://GdkPixbuf';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
@@ -386,15 +387,121 @@ class Backdrop {
 const BACKGROUND_SCHEMA = 'org.gnome.desktop.background';
 const INTERFACE_SCHEMA = 'org.gnome.desktop.interface';
 
-// How GNOME's picture-options place a picture, as the stylesheet says it
-const PLACEMENT = {
-    zoom: 'background-size: cover; background-position: center;',
-    spanned: 'background-size: cover; background-position: center;',
-    scaled: 'background-size: contain; background-position: center;',
-    stretched: 'background-size: 100% 100%;',
-    centered: 'background-position: center;',
-    wallpaper: 'background-position: 0 0;',
-};
+/**
+ * How GNOME's picture-options place a picture in a box, as the stylesheet says
+ * it: the size of the picture and where its corner is, in pixels. The
+ * stylesheet has keywords for this (cover, contain, center) and the Shell does
+ * not read all of them, so it is worked out here from the size of the picture.
+ */
+function placement(options, [width, height], size) {
+    const style = (w, h, x, y) =>
+        `background-size: ${Math.round(w)}px ${Math.round(h)}px; ` +
+        `background-position: ${Math.round(x)}px ${Math.round(y)}px;`;
+    if (options === 'stretched' || !size)
+        return `background-size: ${width}px ${height}px; background-position: 0px 0px;`;
+
+    const [w, h] = size;
+    const fit = options === 'scaled' ? Math.min(width / w, height / h)
+        : options === 'centered' || options === 'wallpaper' ? 1
+            : Math.max(width / w, height / h);          // zoom, spanned and the others
+    const [shownWidth, shownHeight] = [w * fit, h * fit];
+    return options === 'wallpaper'
+        ? style(shownWidth, shownHeight, 0, 0)
+        : style(shownWidth, shownHeight, (width - shownWidth) / 2, (height - shownHeight) / 2);
+}
+
+function pictureStyle(picture, box) {
+    let style = `background-color: ${picture.color};`;
+    if (picture.uri)
+        style += ` background-image: url("${picture.uri}"); ${placement(picture.options, box, picture.size)}`;
+    return style;
+}
+
+/** The size of a picture in pixels, read from its header, or null */
+function pictureSize(uri) {
+    try {
+        const path = Gio.File.new_for_uri(uri).get_path();
+        const [format, width, height] = GdkPixbuf.Pixbuf.get_file_info(path);
+        return format && width > 0 && height > 0 ? [width, height] : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/** A color of the settings, which are written as #rrggbb or as #rrrrggggbbbb,
+ * in the form a stylesheet understands */
+function cssColor(text) {
+    const digits = /^#([0-9a-f]{12})$/i.exec(text ?? '')?.[1];
+    if (digits)
+        return `#${digits.slice(0, 2)}${digits.slice(4, 6)}${digits.slice(8, 10)}`;
+    return /^#[0-9a-f]{6}$/i.test(text ?? '') ? text : '#000000';
+}
+
+/**
+ * The wallpaper as the desktop background settings describe it: the picture
+ * to draw and how, or null when it is not a single picture (a slideshow is an
+ * XML file listing pictures), which is then left to the Shell.
+ */
+class WallpaperSettings {
+    constructor(onChanged) {
+        this._background = new Gio.Settings({schema_id: BACKGROUND_SCHEMA});
+        this._interface = new Gio.Settings({schema_id: INTERFACE_SCHEMA});
+        this._signals = [];
+        for (const [settings, key] of [
+            [this._background, 'changed'], [this._interface, 'changed::color-scheme']])
+            this._signals.push([settings, settings.connect(key, onChanged)]);
+    }
+
+    destroy() {
+        for (const [settings, id] of this._signals)
+            settings.disconnect(id);
+        this._signals = [];
+    }
+
+    picture() {
+        const dark = this._interface.get_string('color-scheme') === 'prefer-dark';
+        let uri = dark ? this._background.get_string('picture-uri-dark') : '';
+        uri ||= this._background.get_string('picture-uri');
+        const options = this._background.get_string('picture-options');
+        const color = cssColor(this._background.get_string('primary-color'));
+
+        if (options === 'none')
+            return {uri: null, options, color, size: null, spanned: false};
+        // A slideshow is an XML file listing pictures, not a picture
+        if (!uri || uri.endsWith('.xml'))
+            return null;
+        return {uri, options, color, size: pictureSize(uri), spanned: options === 'spanned'};
+    }
+}
+
+/**
+ * Draw the wallpaper in a widget that is the size of one monitor.
+ *
+ * A spanned wallpaper is one picture over all the monitors together, and each
+ * of them shows its own part of it, not all of it squeezed in: the widget then
+ * holds the whole picture at the size of all the monitors, moved so that this
+ * monitor's part is the part in view.
+ */
+function drawWallpaper(widget, monitor, picture) {
+    const monitors = Main.layoutManager.monitors;
+    if (!picture.spanned) {
+        widget.style = pictureStyle(picture, [monitor.width, monitor.height]);
+        return;
+    }
+
+    const left = Math.min(...monitors.map(each => each.x));
+    const top = Math.min(...monitors.map(each => each.y));
+    const right = Math.max(...monitors.map(each => each.x + each.width));
+    const bottom = Math.max(...monitors.map(each => each.y + each.height));
+    widget.style = `background-color: ${picture.color};`;
+    widget.add_child(new St.Widget({
+        style: pictureStyle(picture, [right - left, bottom - top]),
+        x: left - monitor.x,
+        y: top - monitor.y,
+        width: right - left,
+        height: bottom - top,
+    }));
+}
 
 /**
  * What the overview is glass over, blurred: the wallpaper, one widget for each
@@ -411,22 +518,14 @@ const PLACEMENT = {
  * left to the Shell, and so to the overview's own color.
  */
 class OverviewWallpaper {
-    constructor() {
+    constructor(settings) {
         this._widgets = [];
         this._shown = false;
-        this._background = new Gio.Settings({schema_id: BACKGROUND_SCHEMA});
-        this._interface = new Gio.Settings({schema_id: INTERFACE_SCHEMA});
-        this._signals = [];
-        for (const [settings, key] of [
-            [this._background, 'changed'], [this._interface, 'changed::color-scheme']])
-            this._signals.push([settings, settings.connect(key, () => this.rebuild())]);
+        this._settings = settings;
         this.rebuild();
     }
 
     destroy() {
-        for (const [settings, id] of this._signals)
-            settings.disconnect(id);
-        this._signals = [];
         this._drop();
     }
 
@@ -439,25 +538,15 @@ class OverviewWallpaper {
     /** The widgets for the monitors and the picture there are now. */
     rebuild() {
         this._drop();
-        const picture = this._style();
+        const picture = this._settings.picture();
         if (!picture)
             return;
-        const {style, spanned} = picture;
-
-        // A spanned wallpaper is one picture over all the monitors together,
-        // and each of them shows its own part of it, not all of it squeezed in.
-        const monitors = Main.layoutManager.monitors;
-        const left = Math.min(...monitors.map(monitor => monitor.x));
-        const top = Math.min(...monitors.map(monitor => monitor.y));
-        const right = Math.max(...monitors.map(monitor => monitor.x + monitor.width));
-        const bottom = Math.max(...monitors.map(monitor => monitor.y + monitor.height));
 
         const uiGroup = Main.layoutManager.uiGroup;
         const overview = Main.layoutManager.overviewGroup;
-        for (const monitor of monitors) {
+        for (const monitor of Main.layoutManager.monitors) {
             const widget = new St.Widget({
                 name: BACKDROP_NAME,
-                style: spanned ? `background-color: ${picture.color};` : style,
                 x: monitor.x,
                 y: monitor.y,
                 width: monitor.width,
@@ -465,40 +554,13 @@ class OverviewWallpaper {
                 clip_to_allocation: true,
                 opacity: 0,
             });
-            if (spanned) {
-                // The whole picture, at the size of all the monitors, moved so
-                // that this monitor's part of it is the part in view
-                widget.add_child(new St.Widget({
-                    style,
-                    x: left - monitor.x,
-                    y: top - monitor.y,
-                    width: right - left,
-                    height: bottom - top,
-                }));
-            }
+            drawWallpaper(widget, monitor, picture);
             widget.add_effect_with_name('blur', new Shell.BlurEffect({mode: Shell.BlurMode.ACTOR}));
             uiGroup.insert_child_below(widget, overview);
             this._widgets.push(widget);
         }
         if (this._shown)
             this.show();
-    }
-
-    _style() {
-        const dark = this._interface.get_string('color-scheme') === 'prefer-dark';
-        let uri = dark ? this._background.get_string('picture-uri-dark') : '';
-        uri ||= this._background.get_string('picture-uri');
-        const options = this._background.get_string('picture-options');
-        const color = this._background.get_string('primary-color') || '#000000';
-
-        let style = `background-color: ${color};`;
-        if (options !== 'none') {
-            // A slideshow is an XML file listing pictures, not a picture
-            if (!uri || uri.endsWith('.xml'))
-                return null;
-            style += ` background-image: url("${uri}"); ${PLACEMENT[options] ?? PLACEMENT.zoom}`;
-        }
-        return {style, color, spanned: options === 'spanned'};
     }
 
     show() {
@@ -531,13 +593,167 @@ class OverviewWallpaper {
     }
 }
 
+/**
+ * The wallpaper behind the lock screen, the same as the desktop's, each
+ * monitor with its own part of it: the clock and the password prompt are
+ * two pages of one dialog, and share one background of blurred wallpapers, one
+ * widget for each monitor, which the Shell blurs itself.
+ *
+ * The Shell fills those widgets with its own wallpaper actor, which is the
+ * thing that is not made to be drawn into a blur: the clock page comes up
+ * well enough and the prompt page comes up black. They are given the picture
+ * instead, drawn as the overview's is, and the Shell's own blur, radius and
+ * dimming are left as they are.
+ */
+class LockWallpaper {
+    constructor(settings) {
+        this._settings = settings;
+        // How far the theme blurs the lock screen's wallpaper, 0 for not at
+        // all, or null when it is not known. It is read while the desktop is
+        // up: the lock screen runs with GNOME's own stylesheet, with none of
+        // this theme's rules in it.
+        this.radius = null;
+        this._dressed = new Set();   // [widget, [what was hidden], [what was added]]
+        this._signals = [];
+        this._idles = new Set();
+
+        const shield = Main.screenShield;
+        const group = shield?._lockDialogGroup;
+        if (!group)
+            return;
+        // The dialog is made each time the screen is locked, and its
+        // background is made a moment after it is added to this group.
+        this._connect(group, 'child-added', (_group, dialog) => this._later(() => this._watch(dialog)));
+        if (shield._dialog)
+            this._watch(shield._dialog);
+    }
+
+    destroy() {
+        for (const id of this._idles)
+            GLib.Source.remove(id);
+        this._idles.clear();
+        for (const [object, id] of this._signals) {
+            try {
+                object.disconnect(id);
+            } catch (e) {
+                // already gone with the dialog
+            }
+        }
+        this._signals = [];
+        this._undress();
+    }
+
+    _connect(object, signal, callback) {
+        this._signals.push([object, object.connect(signal, callback)]);
+    }
+
+    _later(callback) {
+        const id = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._idles.delete(id);
+            callback();
+            return GLib.SOURCE_REMOVE;
+        });
+        this._idles.add(id);
+    }
+
+    _watch(dialog) {
+        const group = dialog._backgroundGroup;
+        if (!group)
+            return;
+        for (const widget of group.get_children())
+            this._dress(widget);
+        // The Shell makes them again when the monitors change
+        this._connect(group, 'child-added', (_group, widget) => this._later(() => this._dress(widget)));
+    }
+
+    _dress(widget) {
+        const picture = this._settings.picture();
+        if (!picture || [...this._dressed].some(([dressed]) => dressed === widget))
+            return;
+        const monitor = Main.layoutManager.monitors.find(each => each.x === widget.x && each.y === widget.y);
+        if (!monitor)
+            return;
+
+        // Whether the theme asks for it, and how far, is said on the widget
+        // itself; with another theme, or with the background blur turned off,
+        // the lock screen is left exactly as the Shell makes it.
+        let radius = this.radius;
+        if (radius === null) {
+            const [has, asked] = widget.get_theme_node().lookup_length(RADIUS_PROPERTY, false);
+            radius = has ? asked : 0;
+        }
+        if (radius <= 0)
+            return;
+
+        // What the Shell put in the widget is hidden and not taken out, so
+        // that it is as it was found when this is turned off
+        const hidden = widget.get_children();
+        for (const child of hidden)
+            child.hide();
+        drawWallpaper(widget, monitor, picture);
+        const added = widget.get_children().filter(child => !hidden.includes(child));
+
+        // The Shell blurs its lock screen by 90 pixels; the theme says how far
+        // it is to be blurred, and its dimming is the Shell's own.
+        const effect = widget.get_effect('blur');
+        const was = effect ? {radius: effect.radius} : null;
+        if (effect)
+            effect.set({radius: Math.round(radius)});
+        this._dressed.add([widget, hidden, added, was]);
+    }
+
+    /** The wallpaper was changed while the screen is locked */
+    refresh() {
+        const widgets = [...this._dressed].map(([widget]) => widget);
+        this._undress();
+        for (const widget of widgets) {
+            try {
+                this._dress(widget);
+            } catch (e) {
+                // the widget has gone with the dialog
+            }
+        }
+    }
+
+    _undress() {
+        for (const [widget, hidden, added, was] of this._dressed) {
+            try {
+                if (was)
+                    widget.get_effect('blur')?.set(was);
+                for (const child of added)
+                    child.destroy();
+                for (const child of hidden)
+                    child.show();
+                widget.style = '';
+            } catch (e) {
+                // the widget has gone with the dialog
+            }
+        }
+        this._dressed.clear();
+    }
+}
+
 export default class BlurExtension extends Extension {
     enable() {
         this._backdrops = new Set();   // one for each surface
-        this._wallpaper = new OverviewWallpaper();   // what the overview is glass over
+        // One reading of the wallpaper for both places it is drawn
+        this._settings = new WallpaperSettings(() => {
+            this._wallpaper?.rebuild();
+            this._lock?.refresh();
+        });
+        this._wallpaper = new OverviewWallpaper(this._settings);   // what the overview is glass over
+        this._lock = new LockWallpaper(this._settings);
         this._signals = [];
 
         const uiGroup = Main.layoutManager.uiGroup;
+        // A widget of the lock screen's kind, kept out of sight, to read what
+        // the theme says about it
+        this._probe = new St.Widget({
+            name: 'gattuccino-probe', style_class: 'screen-shield-background',
+            width: 1, height: 1, opacity: 0, reactive: false,
+        });
+        uiGroup.add_child(this._probe);
+        this._readLockRadius();
         this._connect(uiGroup, 'child-added', (_group, actor) => this._watch(actor));
         this._connect(uiGroup, 'child-removed', (_group, actor) => this._unwatch(actor));
         // The desktop is hidden while the overview is open, and a copy of it is
@@ -550,8 +766,10 @@ export default class BlurExtension extends Extension {
         // The theme is reloaded whole whenever the style or the accent changes,
         // and for a moment carries none of this project's properties. Every
         // surface is asked again once it has settled.
-        this._connect(St.ThemeContext.get_for_stage(global.stage), 'changed',
-            () => this._refreshAll());
+        this._connect(St.ThemeContext.get_for_stage(global.stage), 'changed', () => {
+            this._refreshAll();
+            this._readLockRadius();
+        });
         this._connect(Main.overview, 'showing', () => {
             this._refreshAll();
             this._wallpaper.show();
@@ -574,10 +792,25 @@ export default class BlurExtension extends Extension {
         this._backdrops = null;
         this._wallpaper.destroy();
         this._wallpaper = null;
+        this._lock.destroy();
+        this._lock = null;
+        this._probe.destroy();
+        this._probe = null;
+        this._settings.destroy();
+        this._settings = null;
     }
 
     _connect(object, signal, callback) {
         this._signals.push([object, object.connect(signal, callback)]);
+    }
+
+    // Not while the screen is locked: the stylesheet is then GNOME's own, and
+    // would say the theme asks for nothing.
+    _readLockRadius() {
+        if (Main.sessionMode?.isLocked || !this._probe?.mapped)
+            return;
+        const [has, radius] = this._probe.get_theme_node().lookup_length(RADIUS_PROPERTY, false);
+        this._lock.radius = has && radius > 0 ? Math.round(radius) : 0;
     }
 
     // Everything the theme may have asked to blur is in the UI group: the top
