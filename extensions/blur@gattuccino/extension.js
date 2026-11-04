@@ -314,6 +314,12 @@ class Backdrop {
         this._show();
     }
 
+    /** With a monitor each frame clock of its own, the end of the frame comes
+     * once per monitor and a count of frames runs out that much sooner. */
+    _frameClocks() {
+        return Math.max(Main.layoutManager.monitors?.length ?? 1, 1);
+    }
+
     isShown() {
         return this._shown;
     }
@@ -335,6 +341,7 @@ class Backdrop {
         this._repaintId = global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
             this._blur.queue_repaint();
             this._mask.queue_repaint();
+            this._actor?.queue_redraw();
             if (--this._repaintsLeft > 0)
                 return GLib.SOURCE_CONTINUE;
             this._repaintId = 0;
@@ -400,8 +407,13 @@ class Backdrop {
         const wasShown = this._shown;
         this._shown = shown;
         this._actor.opacity = opacity;
-        if (shown && !wasShown)
+        if (shown && !wasShown) {
             this._place({restack: true});
+            // Coming into view with a texture made while nothing was painted
+            // is the grey background of the first frames of the overview.
+            if (this._wallpaper)
+                this.repaintFor(OVERVIEW_FRAMES * this._frameClocks());
+        }
     }
 
     /**
@@ -517,10 +529,9 @@ export default class BlurExtension extends Extension {
             () => this._refreshAll());
         this._connect(Main.overview, 'showing', () => {
             this._refreshAll();
-            // For as long as the overview takes to open, and a little over
-            for (const backdrop of this._backdrops)
-                backdrop.repaintFor(OVERVIEW_FRAMES);
+            this._repaintAll();
         });
+        this._connect(Main.overview, 'hiding', () => this._repaintAll());
         this._connect(Main.overview, 'shown', () => this._overviewShown());
 
         for (const actor of uiGroup.get_children())
@@ -599,6 +610,12 @@ export default class BlurExtension extends Extension {
             backdrop._show();
     }
 
+    // For as long as the overview takes to open or close, and a little over
+    _repaintAll() {
+        for (const backdrop of this._backdrops)
+            backdrop.repaintFor(OVERVIEW_FRAMES * Math.max(Main.layoutManager.monitors.length, 1));
+    }
+
     _refreshAll() {
         for (const backdrop of this._backdrops)
             backdrop.refresh();
@@ -608,6 +625,7 @@ export default class BlurExtension extends Extension {
     // It leaves a line behind if it happens again, rather than nothing to go on.
     _overviewShown() {
         this._refreshAll();
+        this._repaintAll();
         for (const backdrop of this._backdrops) {
             if (backdrop.anchor === Main.layoutManager.overviewGroup && !backdrop.isPainted())
                 console.warn(`gattuccino: the overview is up without its blur (${backdrop.describe()})`);
