@@ -126,10 +126,10 @@ class ShellThemeTest(unittest.TestCase):
         self.assertEqual(plain["#overviewGroup"], {"background-color": "#1e1e2e"})
 
         r = rules(self.build(blur=True, blur_background_radius=30))
-        self.assertEqual(r["#overviewGroup"]["background-color"], "rgba(30, 30, 46, 0.6)")
+        self.assertEqual(r["#overviewGroup"]["background-color"], "rgba(30, 30, 46, 0.4)")
         # a little dimming of its own
         self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-radius"], "30px")
-        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-brightness"], "0.8")
+        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-brightness"], "0.9")
         self.assertEqual(r["#panel"]["-gattuccino-blur-brightness"], "1")
 
     def test_accent_selection(self):

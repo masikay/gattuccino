@@ -29,8 +29,8 @@ LEGACY_MARKERS = (".gnome-catppuccin",)
 
 # The overview, which GNOME fills with a solid color, becomes glass as well when
 # there is blur, with enough color left to keep the labels on it readable.
-OVERVIEW_OPACITY = 0.6
-OVERVIEW_DIM = 0.8          # of the brightness of the other surfaces, to keep labels legible
+OVERVIEW_OPACITY = 0.4
+OVERVIEW_DIM = 0.9          # of the brightness of the other surfaces, to keep labels legible
 
 
 class BuildError(Exception):
