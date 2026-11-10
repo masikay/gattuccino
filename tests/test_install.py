@@ -321,3 +321,74 @@ class InstallTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShowAppsIconTest(unittest.TestCase):
+    """The icon of the Show Applications button of the dock. It needs no theme,
+    so it runs wherever the installer does."""
+
+    def setUp(self):
+        self.home = FakeHome()
+        self.addCleanup(self.home.close)
+        self.icon = f"{self.home.home}/apps.svg"
+        with open(self.icon, "w") as f:
+            f.write("<svg>mine</svg>")
+        folder = f"{self.home.data}/icons/hicolor/scalable/actions"
+        self.target = f"{folder}/view-app-grid-user-symbolic.svg"
+        # and the same without -symbolic: what is looked up when it is drawn in its own colors
+        self.plain = f"{folder}/view-app-grid-user.svg"
+
+    def apply(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args, "--apply")
+
+    def test_the_icon_is_put_where_dash_to_dock_asks_for_it_and_taken_away_again(self):
+        self.apply("--show-apps-icon", self.icon)
+        self.assertEqual(self.home.read(self.target), "<svg>mine</svg>")
+        self.assertEqual(self.home.read(self.plain), "<svg>mine</svg>")
+
+        # another icon replaces it, and none at all takes it away
+        other = f"{self.home.home}/other.svg"
+        with open(other, "w") as f:
+            f.write("<svg>other</svg>")
+        self.apply("--show-apps-icon", other)
+        self.assertEqual(self.home.read(self.target), "<svg>other</svg>")
+        self.apply("--show-apps-icon", "default")
+        self.assertFalse(os.path.exists(self.target))
+        self.assertFalse(os.path.exists(self.plain))
+
+    def test_uninstall_takes_it_away(self):
+        self.apply("--show-apps-icon", self.icon)
+        self.home.ok("uninstall")
+        self.assertFalse(os.path.exists(self.target))
+        self.assertFalse(os.path.exists(self.plain))
+
+    def test_a_png_goes_in_a_sized_folder(self):
+        png = f"{self.home.home}/apps.png"
+        with open(png, "wb") as f:
+            f.write(b"\x89PNG")
+        self.apply("--show-apps-icon", png)
+        self.assertTrue(os.path.exists(
+            f"{self.home.data}/icons/hicolor/256x256/actions/view-app-grid-user-symbolic.png"))
+
+    def test_an_icon_that_has_gone_does_not_stop_another_from_being_chosen(self):
+        self.apply("--show-apps-icon", self.icon)
+        os.remove(self.icon)
+        other = f"{self.home.home}/other.svg"
+        with open(other, "w") as f:
+            f.write("<svg>other</svg>")
+        # the preference still names the file that is gone: apply says so, and takes the icon it put away
+        result = self.home.ok("apply")
+        self.assertIn("was not found", result)
+        self.assertFalse(os.path.exists(self.target))
+        self.apply("--show-apps-icon", other)
+        self.assertEqual(self.home.read(self.target), "<svg>other</svg>")
+
+    def test_an_icon_that_is_not_ours_is_never_overwritten(self):
+        os.makedirs(os.path.dirname(self.target))
+        with open(self.target, "w") as f:
+            f.write("<svg>theirs</svg>")
+        self.apply("--show-apps-icon", self.icon)
+        self.assertEqual(self.home.read(self.target), "<svg>theirs</svg>")
+        self.assertFalse(os.path.exists(self.plain))   # nothing half done
+        self.apply("--show-apps-icon", "default")
+        self.assertEqual(self.home.read(self.target), "<svg>theirs</svg>")

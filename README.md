@@ -63,6 +63,8 @@ Every preference is an option of `configure`, and a line in `~/.config/gattuccin
 | `--panel-radius` | `round`, or `0` to `100` | `round` | Corner radius of the floating bar, in pixels |
 | `--docked-panel-opacity` | `same`, or `0` to `1` | `same` | Opacity of the floating bar while docked |
 | `--dock-like-panel` / `--no-dock-like-panel` | | off | Give the dock of Dash to Dock or Ubuntu Dock the color and opacity of the top bar |
+| `--dock-radius` | `dock`, `round`, or `0` to `100` | `dock` | Corner radius of the dock of Dash to Dock: `round` is as round as the floating top bar, `dock` keeps the radius Dash to Dock draws |
+| `--show-apps-icon` | `default`, or an `.svg` or `.png` file | `default` | Icon of the Show Applications button of the dock of Dash to Dock |
 | `--blur` / `--no-blur` | | off | Blur the desktop behind the top bar, popup menus and the dock, and the wallpaper behind the overview and on the lock screen |
 | `--blur-radius` | `0` to `100` | `32` | How far the blur behind the top bar, menus and dock reaches, in pixels |
 | `--blur-background` / `--no-blur-background` | | on | Blur the wallpaper behind the overview and on the lock screen |
@@ -98,7 +100,9 @@ Some examples:
 | Shell themes, named `gattuccino-FLAVOR-ACCENT`, for Latte and the dark flavor | `~/.themes` | `shell-theme` is on |
 | `gtk.css`, `gattuccino-latte.css`, `gattuccino-FLAVOR.css` and `gattuccino-accent.css` | `~/.config/gtk-4.0`, `~/.config/gtk-3.0` | `gtk-theme` is on |
 | `gattuccino-selection.css` | `~/.config/gtk-4.0`, `~/.config/gtk-3.0` | `gtk-theme` and `accent-selection` are on |
-| `gattuccino-dock.css` and `gattuccino-lock.css`, in each shell theme | `~/.themes` | `shell-theme` and `accent-selection` are on |
+| `gattuccino-dock.css`, in each shell theme | `~/.themes` | `shell-theme` is on, with `accent-selection` on, or `dock-radius` or `show-apps-icon` set |
+| `gattuccino-lock.css`, in each shell theme | `~/.themes` | `shell-theme` and `accent-selection` are on |
+| `view-app-grid-user-symbolic.svg` and `view-app-grid-user.svg` (or `.png`), under `hicolor` | `~/.local/share/icons` | `show-apps-icon` is set |
 | Extension `catppuccin-accent@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` or `gtk-theme` is on |
 | Extension `floating-panel@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `floating-panel` are on |
 | Extension `blur@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `blur` are on |
@@ -188,6 +192,12 @@ gnome-extensions disable floating-panel@gattuccino
 [Dash to Dock](https://micheleg.github.io/dash-to-dock/), and Ubuntu Dock, which is the same extension, draw the dock with the Shell theme's style for the dash of the overview. So the dock already has the Catppuccin colors, as long as *Use built-in theme* is off in the extension's settings (Appearance).
 
 By default the dock therefore looks like the overview's dash. With `dock-like-panel` on, it takes the color and opacity of the top bar instead (`panel-opacity`), with icons and running dots to match. The dash of the overview itself is not changed.
+
+`dock-radius` sets the corners of the dock: `round` gives it the same pill shape as the floating top bar, a number is a radius in pixels, and `dock` (the default) leaves the radius Dash to Dock draws. It works with or without `dock-like-panel`, and the blur behind the dock follows the new corners. Dash to Dock draws its own radius in a stylesheet that outranks any theme, so this comes from `gattuccino-dock.css` too. A dock extended over the whole edge of the screen stays square.
+
+`show-apps-icon` changes the icon of the Show Applications button of the dock, with an `.svg` or `.png` file of your own. Dash to Dock asks the icon theme for `view-app-grid-user-symbolic` and draws GNOME's own icon when no theme has it, so `apply` copies your file to `~/.local/share/icons/hicolor` under that name (and under the same name without `-symbolic`), and takes it away again when you set `default` or uninstall. The Shell reads icons when it starts, so log out and back in to see it. A file of that name that this project did not put there is left alone. A name ending in `-symbolic` makes the Shell paint an icon in one color, the color of the text, so with a custom icon `gattuccino-dock.css` tells it to draw the file as it is, in its own colors: an icon that is meant to take the color of the text, black on transparent, should be given the color you want in the file. The dash of the overview uses another name and keeps GNOME's icon.
+
+The `icons` folder has one ready-made icon for each flavor, `show-apps-latte.svg`, `show-apps-frappe.svg`, `show-apps-macchiato.svg` and `show-apps-mocha.svg`: a grid of nine rounded squares in the colors of that flavor, for example `./gattuccino configure --show-apps-icon icons/show-apps-mocha.svg --apply`. They are drawn on whole pixels for the 48 pixel icons of the dock, and so on 96 pixels on a screen scaled to 200%, which is what keeps their edges sharp; an icon of your own is sharpest as an SVG, or as a PNG of 256 by 256 pixels. If the file you chose has gone when you apply, `apply` says so and leaves GNOME's icon in place, and `configure` can still be used to choose another.
 
 With `accent-selection` on, the dock also follows the accent: the icon of the application in focus and the icon under the pointer take a light, translucent accent, and the windows counter indicators and the notification counter the accent itself. As in Dash to Dock's own look, focused and hovered icons are drawn the same way, so it is the counter indicator below the icon that marks the focused one. The dash of the overview is again left as it is.
 

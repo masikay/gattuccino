@@ -47,6 +47,7 @@ def _load_state(desktop: Desktop) -> dict:
         state = {}
     state.setdefault("previous", {})  # settings as they were before the first apply
     state.setdefault("flatpak", [])   # Flatpak folders this project opened
+    state.setdefault("icons", [])     # icon files this project put in the icon folder
     return state
 
 
@@ -178,7 +179,9 @@ def _install_shell_themes(desktop: Desktop, preferences: Preferences, version: s
         shutil.rmtree(f"{desktop.themes_dir}/{name}")
     for name, (flavor, accent, css) in themes.items():
         shell_theme.write_theme(f"{desktop.themes_dir}/{name}", css, flavor, accent, version,
-                                dock_accent=preferences.accent_selection)
+                                dock_accent=preferences.accent_selection,
+                                dock_radius=preferences.dock_radius,
+                                show_apps_icon=bool(preferences.show_apps_icon))
 
     if schema_args is None:
         notes.append("The User Themes extension is not installed, so the shell theme is not in use yet. "
@@ -353,6 +356,60 @@ def _remove_extension(desktop: Desktop, uuid: str):
         shutil.rmtree(destination)
 
 
+# --- The Show Applications icon of the dock -----------------------------------
+
+# The name Dash to Dock asks the icon theme for, in a user session. Icon themes
+# do not have it, and it falls back to the icon GNOME draws, so a file of this
+# name in the user's icon folder is used instead.
+SHOW_APPS_ICON = "view-app-grid-user-symbolic"
+
+
+def _show_apps_icon_targets(desktop: Desktop, source: str):
+    """The icon under the name that is asked for, and under the same name
+    without -symbolic, which is what is looked up when the icon is drawn as it
+    is and not in the color of the text (see shell_theme.dock_icon_css)."""
+    folder, extension = (("256x256", "png") if source.lower().endswith(".png") else ("scalable", "svg"))
+    return [f"{desktop.icons_dir}/hicolor/{folder}/actions/{name}.{extension}"
+            for name in (SHOW_APPS_ICON, SHOW_APPS_ICON.removesuffix("-symbolic"))]
+
+
+def _remove_show_apps_icon(desktop: Desktop, state) -> bool:
+    removed = False
+    for path in state["icons"]:
+        if os.path.lexists(path):
+            os.remove(path)
+            removed = True
+    state["icons"] = []
+    if removed:
+        desktop.update_icon_cache(f"{desktop.icons_dir}/hicolor")
+    return removed
+
+
+def _install_show_apps_icon(desktop: Desktop, preferences: Preferences, state, notes) -> bool:
+    """Put the icon in place, or take the one put there before away. Says
+    whether the icons changed, which GNOME Shell only notices after a login."""
+    source = preferences.show_apps_icon
+    targets = _show_apps_icon_targets(desktop, source) if source else []
+    changed = _remove_show_apps_icon(desktop, state)
+    if targets and not os.path.isfile(source):
+        notes.append(f"The icon {source} was not found, so the Show Applications icon is the one GNOME draws. "
+                     "Choose another with --show-apps-icon.")
+        return changed
+    if not targets:
+        return changed
+    for target in targets:
+        if os.path.lexists(target):
+            notes.append(f"{target} is not from gattuccino, so it is left as it is and the Show Applications "
+                         "icon is not changed.")
+            _remove_show_apps_icon(desktop, state)
+            return changed
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copyfile(source, target)
+        state["icons"].append(target)
+    desktop.update_icon_cache(f"{desktop.icons_dir}/hicolor")
+    return True
+
+
 # --- Apply and uninstall -----------------------------------------------------
 
 def apply(preferences: Preferences, desktop: Desktop, log=print):
@@ -389,6 +446,11 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
     else:
         _close_flatpak(desktop, state)
 
+    icon_changed = _install_show_apps_icon(desktop, preferences, state, notes)
+    if preferences.show_apps_icon and icon_changed:
+        log(f"Installed the Show Applications icon {preferences.show_apps_icon}")
+    relogin |= icon_changed
+
     wanted = {
         FLOATING_PANEL_UUID: preferences.shell_theme and preferences.floating_panel,
         # The theme says what to blur; without the theme there is nothing to read
@@ -422,6 +484,7 @@ def uninstall(desktop: Desktop, log=print):
     _restore(desktop, state, "color-scheme")
     _restore(desktop, state, "gtk-theme")
     _close_flatpak(desktop, state)
+    _remove_show_apps_icon(desktop, state)
     for uuid in (FLOATING_PANEL_UUID, ACCENT_UUID, LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
     for path in (desktop.state_path,):

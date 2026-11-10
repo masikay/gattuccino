@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <title>Show applications (macchiato)</title>
+  <!-- Drawn for the 48 pixel icons of the dock, on whole pixels, so that the edges are sharp at 48 and at
+       96 (a screen scaled to 200%). The 12 pixel squares and 4 pixel gaps stay on the pixel grid. -->
+  <rect x="2" y="2" width="12" height="12" rx="3" fill="#ed8796"/>
+  <rect x="18" y="2" width="12" height="12" rx="3" fill="#f5a97f"/>
+  <rect x="34" y="2" width="12" height="12" rx="3" fill="#eed49f"/>
+  <rect x="2" y="18" width="12" height="12" rx="3" fill="#a6da95"/>
+  <rect x="18" y="18" width="12" height="12" rx="3" fill="#8bd5ca"/>
+  <rect x="34" y="18" width="12" height="12" rx="3" fill="#7dc4e4"/>
+  <rect x="2" y="34" width="12" height="12" rx="3" fill="#8aadf4"/>
+  <rect x="18" y="34" width="12" height="12" rx="3" fill="#c6a0f6"/>
+  <rect x="34" y="34" width="12" height="12" rx="3" fill="#f5bde6"/>
+</svg>

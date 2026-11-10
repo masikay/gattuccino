@@ -59,6 +59,26 @@ class PreferencesTest(unittest.TestCase):
         with open(self.path, "w") as f:
             f.write("[preferences]\nblur_overview = no\n")   # from an earlier version: the overview alone
         self.assertIs(prefs.load(self.path).blur_background, False)
+        for written, expected in (("dock", None), ("round", "round"), ("18", 18)):
+            with open(self.path, "w") as f:
+                f.write(f"[preferences]\ndock_radius = {written}\n")
+            self.assertEqual(prefs.load(self.path).dock_radius, expected, written)
+        icon = os.path.join(self.directory.name, "apps.svg")
+        with open(icon, "w") as f:
+            f.write("<svg/>")
+        for written, expected in (("default", None), ("", None), (icon, icon)):
+            with open(self.path, "w") as f:
+                f.write(f"[preferences]\nshow_apps_icon = {written}\n")
+            self.assertEqual(prefs.load(self.path).show_apps_icon, expected, written)
+        # typed on the command line, a file that is not there or not an icon is refused
+        for wrong in (icon + ".missing.svg", os.path.join(self.directory.name, "notes.txt")):
+            with self.assertRaises(prefs.PreferenceError, msg=wrong):
+                prefs.Preferences().set("show_apps_icon", wrong)
+        # but one that has gone since it was chosen does not stop the file from being read
+        gone = icon + ".gone.svg"
+        with open(self.path, "w") as f:
+            f.write(f"[preferences]\nshow_apps_icon = {gone}\n")
+        self.assertEqual(prefs.load(self.path).show_apps_icon, gone)
         with open(self.path, "w") as f:
             f.write("[preferences]\nflavour = frappe\n")
         with self.assertRaisesRegex(prefs.PreferenceError, "unknown preference 'flavour'"):

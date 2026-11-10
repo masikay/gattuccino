@@ -25,6 +25,7 @@ class Desktop:
         self.config_dir = config
         self.themes_dir = f"{self.home}/.themes"
         self.extensions_dir = f"{data}/gnome-shell/extensions"
+        self.icons_dir = f"{data}/icons"
         self.flatpak_overrides = f"{data}/flatpak/overrides/global"
         self.cache_dir = f"{cache}/gattuccino"
         # Earlier versions, under this project's old name, kept their own
@@ -125,6 +126,12 @@ class Desktop:
             elif section == "[Context]" and line.startswith("filesystems="):
                 return [entry for entry in line.split("=", 1)[1].split(";") if entry]
         return []
+
+    def update_icon_cache(self, directory: str):
+        """Bring the cache of an icon folder up to date, if it keeps one: a
+        stale cache hides the icons that were added or taken away since."""
+        if os.path.exists(f"{directory}/icon-theme.cache"):
+            self.run("gtk-update-icon-cache", "-f", "-t", directory)
 
     def flatpak_remove_filesystems(self, entries):
         try:

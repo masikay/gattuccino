@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <title>Show applications (latte)</title>
+  <!-- Drawn for the 48 pixel icons of the dock, on whole pixels, so that the edges are sharp at 48 and at
+       96 (a screen scaled to 200%). The 12 pixel squares and 4 pixel gaps stay on the pixel grid. -->
+  <rect x="2" y="2" width="12" height="12" rx="3" fill="#d20f39"/>
+  <rect x="18" y="2" width="12" height="12" rx="3" fill="#fe640b"/>
+  <rect x="34" y="2" width="12" height="12" rx="3" fill="#df8e1d"/>
+  <rect x="2" y="18" width="12" height="12" rx="3" fill="#40a02b"/>
+  <rect x="18" y="18" width="12" height="12" rx="3" fill="#179299"/>
+  <rect x="34" y="18" width="12" height="12" rx="3" fill="#209fb5"/>
+  <rect x="2" y="34" width="12" height="12" rx="3" fill="#1e66f5"/>
+  <rect x="18" y="34" width="12" height="12" rx="3" fill="#8839ef"/>
+  <rect x="34" y="34" width="12" height="12" rx="3" fill="#ea76cb"/>
+</svg>

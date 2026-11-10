@@ -3,7 +3,7 @@
 import configparser
 import os
 from dataclasses import dataclass, fields
-from typing import Optional
+from typing import Optional, Union
 
 from . import palette
 
@@ -81,6 +81,33 @@ def _radius(text: str):
     return None if text.strip().lower() == "round" else _pixels(100)(text)
 
 
+DOCK = "dock"    # dock_radius: whatever Dash to Dock draws
+ROUND = "round"  # dock_radius: as round as the floating top bar
+
+
+def _dock_radius(text: str):
+    value = text.strip().lower()
+    if value == DOCK:
+        return None
+    return ROUND if value == ROUND else _pixels(100)(text)
+
+
+ICON_DEFAULT = "default"   # show_apps_icon: the icon GNOME draws
+ICON_SUFFIXES = (".svg", ".png")
+
+
+def _icon_file(text: str):
+    value = text.strip()
+    if value.lower() in ("", ICON_DEFAULT):
+        return None
+    path = os.path.abspath(os.path.expanduser(value))
+    if not path.lower().endswith(ICON_SUFFIXES):
+        raise PreferenceError("expected an .svg or .png file, or 'default'")
+    if not os.path.isfile(path):
+        raise PreferenceError(f"{path} was not found")
+    return path
+
+
 def _docked_opacity(text: str):
     return None if text.strip().lower() == "same" else _opacity(text)
 
@@ -129,6 +156,14 @@ SPECS = {
                                  none_as="same"),
     "dock_like_panel": Spec(_boolean, "yes, no",
                             "Give the dock of Dash to Dock or Ubuntu Dock the color and opacity of the top bar"),
+    "dock_radius": Spec(_dock_radius, f"{DOCK}, {ROUND}, or 0 to 100",
+                        "Corner radius of the dock of Dash to Dock; 'round' is as round as the floating top bar, "
+                        f"'{DOCK}' keeps the radius Dash to Dock draws",
+                        none_as=DOCK),
+    "show_apps_icon": Spec(_icon_file, f"{ICON_DEFAULT}, or an .svg or .png file",
+                           "Icon of the Show Applications button of the dock of Dash to Dock; "
+                           f"'{ICON_DEFAULT}' keeps the one GNOME draws",
+                           none_as=ICON_DEFAULT),
     "blur": Spec(_blur, "yes, no",
                  "Blur the desktop behind the top bar, popup menus, the overview and the dock"),
     "blur_radius": Spec(_pixels(100), "0 to 100", "How far the blur reaches, in pixels"),
@@ -162,6 +197,8 @@ class Preferences:
     panel_radius: Optional[int] = None
     docked_panel_opacity: Optional[float] = None
     dock_like_panel: bool = False
+    dock_radius: Optional[Union[int, str]] = None
+    show_apps_icon: Optional[str] = None
     blur: bool = False
     blur_radius: int = 32
     blur_background: bool = True
@@ -212,6 +249,14 @@ def load(path: str) -> Preferences:
                 name = "blur_background"  # written by an earlier version: it was the overview alone
             if name not in SPECS:
                 raise PreferenceError(f"{path}: unknown preference '{name}'")
+            if name == "show_apps_icon":
+                # A file that has gone since it was chosen is not a reason to stop
+                # here: it would make `configure` unable to choose another one.
+                # `apply` says it is missing.
+                value = text.strip()
+                preferences.show_apps_icon = (
+                    None if value.lower() in ("", ICON_DEFAULT) else os.path.abspath(os.path.expanduser(value)))
+                continue
             if name == "flavor" and text.strip().lower() == palette.LIGHT_FLAVOR:
                 continue  # written by an earlier version: latte now comes with every dark flavor
             preferences.set(name, text)

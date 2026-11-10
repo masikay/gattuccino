@@ -207,6 +207,26 @@ class ShellThemeTest(unittest.TestCase):
         self.assertEqual(r["#dashtodockContainer #dash .notification-badge"],
                          {"background-color": f"{accent} !important", "color": f"{on_accent} !important"})
 
+    def test_dock_icon_is_drawn_in_its_own_colors(self):
+        r = rules(shell_theme.dock_icon_css())
+        self.assertEqual(r["#dashtodockContainer #dash .show-apps-icon"], {"-st-icon-style": "regular !important"})
+        self.assertEqual(r["#dashtodockContainer #dash .show-apps StIcon"], {"-st-icon-style": "regular !important"})
+
+    def test_dock_shape(self):
+        r = rules(shell_theme.dock_shape_css("round"))
+        # as round as the floating top bar, past Dash to Dock's own radius
+        self.assertEqual(r["#dashtodockContainer #dash .dash-background"], {"border-radius": "999px !important"})
+        # and a dock extended over the whole edge stays square
+        self.assertEqual(r["#dashtodockContainer.extended #dash .dash-background"]["border-radius"], "0 !important")
+        # room at the ends of the dock, along the edge it is on, so that the icons clear the curve
+        for edge, sides in (("bottom", ("left", "right")), ("top", ("left", "right")),
+                            ("left", ("top", "bottom")), ("right", ("top", "bottom"))):
+            declarations = r[f"#dashtodockContainer.{edge} #dash .dash-background"]
+            self.assertEqual(declarations, {f"padding-{side}": "15px !important" for side in sides}, edge)
+        r = rules(shell_theme.dock_shape_css(12))
+        self.assertEqual(r["#dashtodockContainer #dash .dash-background"]["border-radius"], "12px !important")
+        self.assertEqual(r["#dashtodockContainer.bottom #dash .dash-background"]["padding-left"], "6px !important")
+
     def test_lock_screen_accent(self):
         accent, on_accent = palette.color("mocha", "teal"), palette.color("mocha", "base")
         r = rules(shell_theme.lock_accent_css("mocha", "teal"))
