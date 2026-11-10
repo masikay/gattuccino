@@ -17,7 +17,11 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 //   gattuccino-accent.css in ~/.config/gtk-4.0 and ~/.config/gtk-3.0,
 //   and switches GTK 3 between adw-gtk3 and adw-gtk3-dark;
 // - the dock of Dash to Dock: loads gattuccino-dock.css, the accent
-//   rules the theme in use was built with, if it has them.
+//   rules the theme in use was built with, if it has them;
+// - the lock screen: the same for gattuccino-lock.css. The Shell runs the
+//   lock screen with its own stylesheet and not the theme's, so the accent
+//   there is a stylesheet of an extension too, which this one keeps loaded
+//   while the screen is locked as well.
 //
 // It only touches what belongs to Gattuccino: a shell theme whose name
 // does not end in one of the accents below is left alone, and so are GTK
@@ -78,6 +82,8 @@ const USER_THEME_SCHEMA = 'org.gnome.shell.extensions.user-theme';
 // stylesheet, and not left to the theme, because Dash to Dock states those
 // colors in its own stylesheet, which outranks every theme.
 const DOCK_STYLESHEET = 'gattuccino-dock.css';
+const LOCK_STYLESHEET = 'gattuccino-lock.css';
+const ACCENT_STYLESHEETS = [DOCK_STYLESHEET, LOCK_STYLESHEET];
 
 // Same places the User Themes extension loads shell themes from
 function themeDirs() {
@@ -278,43 +284,49 @@ export default class CatppuccinAccentExtension extends Extension {
         });
     }
 
-    // Loads the accent rules for the dock that come with the selected theme,
-    // and drops the ones loaded for another theme. Themes that are not ours,
-    // and ours built without accent-selection, have no such file: nothing is
-    // then loaded, and the dock keeps the colors of Dash to Dock.
+    // Loads the accent rules for the dock and for the lock screen that come
+    // with the selected theme, and drops the ones loaded for another theme.
+    // Themes that are not ours, and ours built without accent-selection, have
+    // no such files: nothing is then loaded, and the dock keeps the colors of
+    // Dash to Dock and the lock screen those of GNOME.
     _syncDock() {
         const theme = this._themeContext?.get_theme();
         const name = this._userThemeSettings?.get_string('name');
-        const file = name?.match(VARIANT_NAME)
-            ? this._themeFile(name, DOCK_STYLESHEET) : null;
+        const files = name?.match(VARIANT_NAME)
+            ? ACCENT_STYLESHEETS.map(basename => this._themeFile(name, basename)).filter(file => file)
+            : [];
 
-        const [loadedTheme, loadedFile] = this._dockStylesheet ?? [];
-        if (loadedTheme === theme && file && loadedFile?.equal(file))
+        const [loadedTheme, loadedFiles] = this._dockStylesheet ?? [];
+        if (loadedTheme === theme && files.length &&
+            files.length === loadedFiles.length && files.every((file, i) => loadedFiles[i].equal(file)))
             return;
 
         this._unloadDock();
-        if (!theme || !file)
+        if (!theme || !files.length)
             return;
-        try {
-            // Recorded before loading: load_stylesheet() can come straight back
-            // here, and the check above is what has to stop it
-            this._dockStylesheet = [theme, file];
-            theme.load_stylesheet(file);
-        } catch (e) {
-            this._dockStylesheet = null;
-            console.warn(`${this.uuid}: could not load ${file.get_path()}: ${e.message}`);
+        // Recorded before loading: load_stylesheet() can come straight back
+        // here, and the check above is what has to stop it
+        this._dockStylesheet = [theme, files];
+        for (const file of files) {
+            try {
+                theme.load_stylesheet(file);
+            } catch (e) {
+                console.warn(`${this.uuid}: could not load ${file.get_path()}: ${e.message}`);
+            }
         }
     }
 
     _unloadDock() {
         if (!this._dockStylesheet)
             return;
-        const [theme, file] = this._dockStylesheet;
+        const [theme, files] = this._dockStylesheet;
         this._dockStylesheet = null;
-        try {
-            theme.unload_stylesheet(file);
-        } catch (e) {
-            console.warn(`${this.uuid}: could not unload ${file.get_path()}: ${e.message}`);
+        for (const file of files) {
+            try {
+                theme.unload_stylesheet(file);
+            } catch (e) {
+                console.warn(`${this.uuid}: could not unload ${file.get_path()}: ${e.message}`);
+            }
         }
     }
 

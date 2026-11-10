@@ -253,6 +253,8 @@ class InstallTest(unittest.TestCase):
         for flavor in ("latte", "mocha"):
             dock = home.read(f"{home.themes}/gattuccino-{flavor}-teal/gnome-shell/{shell_theme.DOCK_STYLESHEET}")
             self.assertEqual(dock, shell_theme.dock_accent_css(flavor, "teal"))
+            lock = home.read(f"{home.themes}/gattuccino-{flavor}-teal/gnome-shell/{shell_theme.LOCK_STYLESHEET}")
+            self.assertEqual(lock, shell_theme.lock_accent_css(flavor, "teal"))
             self.assertIn(palette.color(flavor, "teal"), dock)
         for folder, rule in (("gtk-4.0", ".navigation-sidebar row:selected,"), ("gtk-3.0", "menu menuitem:hover,")):
             selection = home.read(f"{home.config}/{folder}/gattuccino-selection.css")

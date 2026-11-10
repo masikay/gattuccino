@@ -19,6 +19,7 @@ const dockSheet = (name, themes = '/home/u/.themes') => `${themes}/${name}/gnome
 
 // The extension loads the dock stylesheet from an idle call, so that loading it
 // does not re-enter the theme-changed handler that asked for it.
+const lockSheet = name => dockSheet(name).replace('gattuccino-dock.css', 'gattuccino-lock.css');
 const dockLoaded = () => { settle(); return loaded(); };
 const GTK4 = '/home/u/.config/gtk-4.0/gattuccino-accent.css';
 const GTK3 = '/home/u/.config/gtk-3.0/gattuccino-accent.css';
@@ -202,6 +203,16 @@ test('catppuccin accent', async t => {
         pickAccent('yellow');
         environment.failWrites = false;
         assert.equal(theme(), 'gattuccino-mocha-yellow');
+    });
+
+    // The lock screen runs with the Shell's own stylesheet, so its accent is
+    // loaded the same way, and again whenever the Shell swaps the theme
+    await t.test('loads the accent rules for the lock screen with those of the dock', () => {
+        files.set(dockSheet('gattuccino-mocha-teal'), '');
+        files.set(lockSheet('gattuccino-mocha-teal'), '');
+        switchTheme('gattuccino-mocha-teal');
+        assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-mocha-teal'), lockSheet('gattuccino-mocha-teal')]);
+        files.delete(lockSheet('gattuccino-mocha-teal'));
     });
 
     await t.test('loads the accent rules for the dock that come with the theme', () => {

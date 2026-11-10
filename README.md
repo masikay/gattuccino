@@ -98,7 +98,7 @@ Some examples:
 | Shell themes, named `gattuccino-FLAVOR-ACCENT`, for Latte and the dark flavor | `~/.themes` | `shell-theme` is on |
 | `gtk.css`, `gattuccino-latte.css`, `gattuccino-FLAVOR.css` and `gattuccino-accent.css` | `~/.config/gtk-4.0`, `~/.config/gtk-3.0` | `gtk-theme` is on |
 | `gattuccino-selection.css` | `~/.config/gtk-4.0`, `~/.config/gtk-3.0` | `gtk-theme` and `accent-selection` are on |
-| `gattuccino-dock.css`, in each shell theme | `~/.themes` | `shell-theme` and `accent-selection` are on |
+| `gattuccino-dock.css` and `gattuccino-lock.css`, in each shell theme | `~/.themes` | `shell-theme` and `accent-selection` are on |
 | Extension `catppuccin-accent@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` or `gtk-theme` is on |
 | Extension `floating-panel@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `floating-panel` are on |
 | Extension `blur@gattuccino` | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `blur` are on |
@@ -195,6 +195,8 @@ For the theme to decide, leave these as they are by default in the extension's s
 
 The stylesheet of an extension outranks any Shell theme, whatever the theme says, and Dash to Dock states the highlight of a focused and of a hovered icon, the color of the notification counter, and the separator in its own. So the accent for the dock cannot be part of the theme: it is a stylesheet of its own, `gattuccino-dock.css`, built next to each theme's stylesheet and loaded by the `catppuccin-accent` extension, which is an extension stylesheet in turn. There `!important` is what gets ahead of Dash to Dock, and it is the one place in this project that uses it. The separator stays a white overlay, faint on the light bar of Latte.
 
+The lock screen gets the accent the same way, and for a reason of its own: GNOME Shell runs the lock screen with its own stylesheet, not the theme's, which is put away when the screen is locked and back when it is unlocked. `gattuccino-lock.css` is built next to the dock's, and the `catppuccin-accent` extension, which stays loaded while the screen is locked, keeps it loaded. It gives the password field the accent for its focus ring, its insertion point and its selected text.
+
 ## Blur
 
 With `blur` on, the desktop is blurred behind the surfaces it shows through: the top bar, popup menus (panel menus, quick settings, the calendar), the overview and, with `dock-like-panel` on, the dock. It blurs whatever is actually behind them, windows included, and follows their shape, so the rounded ends of the floating bar and the rounded corners of a menu stay rounded.
@@ -233,7 +235,7 @@ If your distribution's version has no upstream release of the same name, set the
 
 ## Limits
 
-- The login screen is not themed. The lock screen keeps GNOME's look too, with one exception: with `blur` and `blur-background` on, the blur extension also runs while the screen is locked, and gives the lock screen's blurred background (the clock and the password prompt share it) the wallpaper picture in place of the Shell's own, which has been seen to come up black, blurred by `blur-background-radius`. Its dimming stays GNOME's.
+- The login screen is not themed. The lock screen keeps GNOME's look too, with one exception: with `blur` and `blur-background` on, the blur extension also runs while the screen is locked, and gives the lock screen's blurred background (the clock and the password prompt share it) the wallpaper picture in place of the Shell's own, which has been seen to come up black, blurred by `blur-background-radius`. Its dimming stays GNOME's. With `accent-selection` on, the password field also takes the accent (see the dock above for how).
 - Buttons and cards inside translucent popups stay solid, so that they remain readable. Notification banners, on-screen displays, the window switcher and dialogs are not translucent.
 - GTK 3 applications only follow with the adw-gtk3 theme. Qt, Electron and Firefox do not use these colors at all.
 - With `accent-selection` on, GTK 3 applications get the accent on menu items and on hovered sidebar rows, but not on the selected row: GTK 3 stylesheets cannot match one.

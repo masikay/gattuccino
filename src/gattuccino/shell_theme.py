@@ -566,6 +566,42 @@ def build_css(source_theme_dir: str, flavor: str, accent: str, options: ShellOpt
         return compile_scss(f"{theme_src}/gnome-shell-{variant}.scss")
 
 
+# --- The accent on the lock screen ---------------------------------------
+
+# Another stylesheet of the same kind, for the same reason. GNOME Shell runs the
+# lock screen with its own stylesheet and not with the theme: the theme goes
+# when the screen is locked and comes back when it is unlocked. So the lock
+# screen can only be given the accent by an extension, which keeps a stylesheet
+# loaded for it, and this is that stylesheet.
+LOCK_STYLESHEET = "gattuccino-lock.css"
+
+
+def lock_accent_css(flavor: str, accent: str) -> str:
+    """The accent in the password field of the lock screen: the ring around it
+    while it has the focus, the insertion point and the selected text."""
+    color = palette.color(flavor, accent)
+    on_accent = palette.color(flavor, "base")
+    text = palette.color(flavor, "text")
+    return f"""/* gattuccino: lock screen accent (flavor={flavor}, accent={accent})
+ * Written by gattuccino, and loaded by its Catppuccin Accent extension.
+ * GNOME Shell runs the lock screen with its own stylesheet, not the theme's,
+ * so the accent there has to come from a stylesheet of an extension.
+ * Edits to this file are overwritten. */
+
+.unlock-dialog .login-dialog-prompt-entry {{
+  caret-color: {color};
+  selection-background-color: {color};
+  selected-color: {on_accent};
+}}
+
+/* GNOME states the ring with !important */
+.unlock-dialog .login-dialog-prompt-entry:focus {{
+  box-shadow: inset 0 0 0 2px st-transparentize({color}, 0.2) !important;
+  background-color: st-mix({color}, st-transparentize({text}, 0.9), 8%);
+}}
+"""
+
+
 def write_theme(directory: str, css: str, flavor: str, accent: str, shell_version: str,
                 dock_accent: bool = False):
     """Write a theme folder the User Themes extension can load."""
@@ -573,6 +609,7 @@ def write_theme(directory: str, css: str, flavor: str, accent: str, shell_versio
     _write(f"{directory}/gnome-shell/gnome-shell.css", css)
     if dock_accent:
         _write(f"{directory}/gnome-shell/{DOCK_STYLESHEET}", dock_accent_css(flavor, accent))
+        _write(f"{directory}/gnome-shell/{LOCK_STYLESHEET}", lock_accent_css(flavor, accent))
     _write(f"{directory}/index.theme",
            "[Desktop Entry]\n"
            "Type=X-GNOME-Metatheme\n"

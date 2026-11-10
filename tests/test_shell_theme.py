@@ -207,6 +207,23 @@ class ShellThemeTest(unittest.TestCase):
         self.assertEqual(r["#dashtodockContainer #dash .notification-badge"],
                          {"background-color": f"{accent} !important", "color": f"{on_accent} !important"})
 
+    def test_lock_screen_accent(self):
+        accent, on_accent = palette.color("mocha", "teal"), palette.color("mocha", "base")
+        r = rules(shell_theme.lock_accent_css("mocha", "teal"))
+        entry = ".unlock-dialog .login-dialog-prompt-entry"
+        self.assertEqual(r[entry], {"caret-color": accent, "selection-background-color": accent,
+                                    "selected-color": on_accent})
+        self.assertEqual(r[entry + ":focus"]["box-shadow"],
+                         f"inset 0 0 0 2px st-transparentize({accent}, 0.2) !important")
+        # nothing but the lock screen's password field is touched
+        self.assertTrue(all(selector.startswith(entry) for selector in r), sorted(r))
+
+    def test_lock_screen_accent_follows_the_flavor_and_the_accent(self):
+        css = shell_theme.lock_accent_css("latte", "mauve")
+        self.assertIn("flavor=latte, accent=mauve", css)
+        self.assertIn(palette.color("latte", "mauve"), css)
+        self.assertNotIn(palette.color("mocha", "mauve"), css)
+
     def test_dock_accent_follows_the_flavor_and_the_accent(self):
         css = shell_theme.dock_accent_css("latte", "mauve")
         self.assertIn("flavor=latte, accent=mauve", css)
