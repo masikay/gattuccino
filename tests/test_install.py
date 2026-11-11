@@ -51,7 +51,7 @@ class InstallTest(unittest.TestCase):
         self.assertIn("#panel.floating-panel", css)
         self.assertIn("#panel.docked-panel", css)
         self.assertIn("#dashtodockContainer #dash .dash-background", css)
-        self.assertIn("-gattuccino-blur-radius: 24px", css)   # read by the blur extension
+        self.assertNotIn("gattuccino-blur", css)   # the blur is the extension's, and its own settings'
         self.assertIn("rgba(30, 30, 46, 0.8)", css)   # the popups, in the theme's own color
         self.assertNotIn("st-accent", css)
         self.assertIn(SHELL_VERSION, home.read(f"{home.themes}/gattuccino-mocha-mauve/{shell_theme.MARKER}"))

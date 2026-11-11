@@ -74,10 +74,6 @@ def shell_options(preferences: Preferences) -> shell_theme.ShellOptions:
         docked_panel_opacity=preferences.docked_panel_opacity,
         dock_like_panel=preferences.dock_like_panel,
         accent_selection=preferences.accent_selection,
-        blur=preferences.blur,
-        blur_radius=preferences.blur_radius,
-        blur_background=preferences.blur_background,
-        blur_background_radius=preferences.blur_background_radius,
     )
 
 

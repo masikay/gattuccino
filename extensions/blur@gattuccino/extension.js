@@ -15,10 +15,15 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 // A stylesheet cannot blur what is behind it, so this extension does. How far
 // is its own setting (radius, and background-radius for the wallpaper behind
 // the overview and the lock screen), which is changed while it runs, in the
-// preferences of the extension or by Gattuccino. How bright the blurred copy
-// is left is still said by the theme, on the surface itself, where the overview
-// takes a little dimming of its own; without it a copy is left as it is.
-const BRIGHTNESS_PROPERTY = '-gattuccino-blur-brightness';
+// preferences of the extension or by Gattuccino.
+
+// The overview is solid, as GNOME makes it, and only while its wallpaper is
+// blurred does it become glass: translucent over the blurred wallpaper, which
+// is dimmed a little so that the names under the application icons stay legible
+// over a bright one. A translucent overview with nothing opaque behind it shows
+// what the screen held before, and so ghosts the icons and the text in it.
+const OVERVIEW_OPACITY = 0.4;
+const OVERVIEW_DIM = 0.9;
 
 // The surfaces to look for. Each has a shape, the actor the theme fills and
 // rounds, and an anchor, the actor that is placed and animated as a whole.
@@ -217,7 +222,6 @@ class Backdrop {
 
         const node = this._shape.get_theme_node();
         const radius = this._radiusOf();
-        const [hasBrightness, brightness] = node.lookup_double(BRIGHTNESS_PROPERTY, false);
 
         // A surface that is not translucent has nothing to show through it: in
         // the overview the bar has no background at all, and docked it can be
@@ -231,7 +235,7 @@ class Backdrop {
             return;
         }
 
-        this._blur.set({radius: Math.round(radius), brightness: hasBrightness ? brightness : 1});
+        this._blur.set({radius: Math.round(radius), brightness: 1});
         // The cut follows the surface's own outer edge. Insetting it by the
         // border instead was tried and is worse: the corner of the blur then
         // sits visibly inside the corner of the surface.
@@ -530,6 +534,9 @@ class OverviewWallpaper {
 
     destroy() {
         this._drop();
+        if (this._tinted)
+            Main.layoutManager.overviewGroup.style = '';
+        this._tinted = false;
     }
 
     _drop() {
@@ -572,16 +579,15 @@ class OverviewWallpaper {
         if (!overview.mapped)
             return;
 
-        const node = overview.get_theme_node();
-        const [hasBrightness, brightness] = node.lookup_double(BRIGHTNESS_PROPERTY, false);
         const radius = this._prefs.get_boolean('background') ? this._prefs.get_int('background-radius') : 0;
         const wanted = radius > 0;
+        this._tint(overview, wanted);
 
         const uiGroup = Main.layoutManager.uiGroup;
         for (const widget of this._widgets) {
             widget.get_effect('blur').set({
                 radius: Math.round(radius),
-                brightness: hasBrightness ? brightness : 1,
+                brightness: OVERVIEW_DIM,
             });
             // Kept right behind the overview, whatever has been added since
             uiGroup.set_child_below_sibling(widget, overview);
@@ -589,6 +595,23 @@ class OverviewWallpaper {
             // A blur that is not wanted does not run at all, not even unseen
             widget.get_effect('blur').enabled = wanted;
         }
+    }
+
+    /**
+     * Glass over the blurred wallpaper, solid otherwise. The color is the one
+     * the theme gives the overview, read with nothing of this on it, so that it
+     * follows the flavor and the accent; a theme that was built to make it
+     * translucent by itself is made solid in the same way.
+     */
+    _tint(overview, wanted) {
+        overview.style = '';
+        overview.ensure_style?.();
+        const color = overview.get_theme_node().get_background_color();
+        const rgb = `${color.red}, ${color.green}, ${color.blue}`;
+        overview.style = wanted
+            ? `background-color: rgba(${rgb}, ${OVERVIEW_OPACITY});`
+            : `background-color: rgb(${rgb});`;
+        this._tinted = true;
     }
 
     /** A setting changed: what is shown takes it, and what is not shown waits */

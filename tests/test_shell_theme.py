@@ -79,58 +79,13 @@ class ShellThemeTest(unittest.TestCase):
         self.assertEqual(r["#panel.docked-panel"]["background-color"], "#11111b")
         self.assertEqual(r["#panel.docked-panel:overview"]["background-color"], "transparent")
 
-    def test_no_blur_unless_asked_for(self):
-        self.assertNotIn("gattuccino-blur", self.build())
-        self.assertNotIn("gattuccino-blur", self.build(blur=False, blur_radius=40))
-
-    def test_the_background_can_be_left_out_of_the_blur(self):
-        r = rules(self.build(blur=True, blur_background=False))
-        self.assertEqual(r["#panel"]["-gattuccino-blur-radius"], "32px")
-        # GNOME's own solid background is left on the overview, so there is nothing to see through
-        self.assertEqual(r["#overviewGroup"], {"background-color": "#1e1e2e"})
-        self.assertNotIn("-gattuccino-blur-radius", r.get(".screen-shield-background", {}))
-
-    def test_the_background_has_a_blur_of_its_own(self):
-        r = rules(self.build(blur=True, blur_radius=40, blur_background_radius=12))
-        self.assertEqual(r["#panel"]["-gattuccino-blur-radius"], "40px")
-        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-radius"], "12px")
-        # the lock screen says only how far: the Shell's own dimming stays
-        self.assertEqual(r[".screen-shield-background"]["-gattuccino-blur-radius"], "12px")
-        self.assertNotIn("-gattuccino-blur-brightness", r[".screen-shield-background"])
-
-    def test_blur_leaves_the_colors_of_the_surfaces_alone(self):
-        options = dict(panel_opacity=0.8, popup_opacity=0.8, floating_panel=True,
-                       docked_panel_opacity=0.9, dock_like_panel=True)
-        plain = rules(self.build(**options))
-        blurred = rules(self.build(blur=True, **options))
-        for surface in ("#panel", ".popup-menu-content", "#panel.docked-panel",
-                        "#dashtodockContainer #dash .dash-background"):
-            self.assertEqual(blurred[surface]["background-color"],
-                             plain[surface]["background-color"], surface)
-
-    def test_blur_states_what_the_extension_should_blur(self):
-        r = rules(self.build(blur=True, blur_radius=40, panel_opacity=0.8, popup_opacity=0.8))
-        for surface in ("#panel", ".popup-menu-content"):
-            self.assertEqual(r[surface]["-gattuccino-blur-radius"], "40px", surface)
-            self.assertEqual(r[surface]["-gattuccino-blur-brightness"], "1", surface)
-        # the dock only has them when the theme styles the dock at all
-        self.assertNotIn("#dashtodockContainer #dash .dash-background", r)
-        r = rules(self.build(blur=True, dock_like_panel=True))
-        self.assertEqual(r["#dashtodockContainer #dash .dash-background"]["-gattuccino-blur-radius"], "32px")
-
-        # plain glass leaves the colors of the surfaces as they are
-        self.assertEqual(r["#panel"]["background-color"], "#11111b")
-
-    def test_blur_turns_the_overview_into_glass(self):
-        plain = rules(self.build())
-        self.assertEqual(plain["#overviewGroup"], {"background-color": "#1e1e2e"})
-
-        r = rules(self.build(blur=True, blur_background_radius=30))
-        self.assertEqual(r["#overviewGroup"]["background-color"], "rgba(30, 30, 46, 0.4)")
-        # a little dimming of its own
-        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-radius"], "30px")
-        self.assertEqual(r["#overviewGroup"]["-gattuccino-blur-brightness"], "0.9")
-        self.assertEqual(r["#panel"]["-gattuccino-blur-brightness"], "1")
+    def test_the_theme_says_nothing_of_the_blur_and_leaves_the_overview_solid(self):
+        # How far to blur is a setting of the blur extension, and it is the extension
+        # that turns the overview into glass while its wallpaper is blurred: a
+        # translucent overview with nothing opaque behind it ghosts what is in it
+        css = self.build(panel_opacity=0.8, popup_opacity=0.8, dock_like_panel=True)
+        self.assertNotIn("gattuccino-blur", css)
+        self.assertEqual(rules(css)["#overviewGroup"], {"background-color": "#1e1e2e"})
 
     def test_accent_selection(self):
         accent, fg = palette.color("mocha", "teal"), palette.color("mocha", "base")

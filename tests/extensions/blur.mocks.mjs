@@ -19,7 +19,7 @@ export const state = {
 };
 
 class ThemeNode {
-    constructor(actor) { this._theme = actor.theme ?? state.theme; }
+    constructor(actor) { this._actor = actor; this._theme = actor.theme ?? state.theme; }
     lookup_length(name) {
         const {radius} = this._theme;
         return name === '-gattuccino-blur-radius' && radius != null ? [true, radius] : [false, 0];
@@ -28,7 +28,12 @@ class ThemeNode {
         const {brightness} = this._theme;
         return name === '-gattuccino-blur-brightness' && brightness != null ? [true, brightness] : [false, 0];
     }
-    get_background_color() { return {alpha: this._theme.alpha}; }
+    // the base color of the theme, and what an inline style of the actor does to it
+    get_background_color() {
+        const inline = /background-color: rgba?\((\d+), (\d+), (\d+)/.exec(this._actor?.style ?? '');
+        const [red, green, blue] = inline ? inline.slice(1).map(Number) : [30, 30, 46];
+        return {red, green, blue, alpha: this._theme.alpha};
+    }
     get_border_radius(corner) { return this._theme.corners[corner]; }
     get_border_width() { return this._theme.border; }
 }

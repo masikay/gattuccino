@@ -335,6 +335,22 @@ test('the overview', async t => {
         assert.equal(wallpaper.get_effect('blur').mode, 0);
     });
 
+    // A translucent overview with nothing opaque behind it ghosts the icons and
+    // the text in it: it is solid, as GNOME makes it, unless its wallpaper is blurred
+    await t.test('is glass only while its wallpaper is blurred, and solid otherwise', () => {
+        open();
+        assert.equal(overviewGroup.style, 'background-color: rgba(30, 30, 46, 0.4);');
+        assert.equal(wallpapers()[0].get_effect('blur').brightness, 0.9);
+
+        setPref('background', false);
+        assert.equal(overviewGroup.style, 'background-color: rgb(30, 30, 46);');
+        setPref('background', true);
+        assert.equal(overviewGroup.style, 'background-color: rgba(30, 30, 46, 0.4);');
+        setPref('background-radius', 0);
+        assert.equal(overviewGroup.style, 'background-color: rgb(30, 30, 46);');
+        setPref('background-radius', 32);
+    });
+
     await t.test('goes again once it has closed', () => {
         Main.overview.emit('hidden');
         assert.equal(wallpapers()[0].opacity, 0);
@@ -415,6 +431,7 @@ test('the overview', async t => {
     await t.test('is given up on disable', () => {
         extension.disable();
         assert.equal(backdropsIn(uiGroup).length, 0);
+        assert.equal(overviewGroup.style, '');   // the theme's own again
     });
 });
 

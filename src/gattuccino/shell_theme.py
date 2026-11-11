@@ -27,12 +27,6 @@ MARKER = ".gattuccino"
 LEGACY_MARKERS = (".gnome-catppuccin",)
 
 
-# The overview, which GNOME fills with a solid color, becomes glass as well when
-# there is blur, with enough color left to keep the labels on it readable.
-OVERVIEW_OPACITY = 0.4
-OVERVIEW_DIM = 0.9          # of the brightness of the other surfaces, to keep labels legible
-
-
 class BuildError(Exception):
     pass
 
@@ -47,10 +41,6 @@ class ShellOptions:
     docked_panel_opacity: Optional[float] = None  # None: same as the panel
     dock_like_panel: bool = False
     accent_selection: bool = False
-    blur: bool = False
-    blur_radius: int = 32
-    blur_background: bool = True
-    blur_background_radius: int = 32
 
 
 def theme_name(flavor: str, accent: str) -> str:
@@ -372,56 +362,6 @@ def _apply_floating_panel(sass_dir: str, options: ShellOptions):
         f.write(style)
 
 
-def _apply_blur(sass_dir: str, options: ShellOptions):
-    """Ask the blur extension to blur what is behind the translucent surfaces.
-
-    A stylesheet cannot blur anything: all a theme can do is say what it would
-    like blurred. These two properties are of this project's own making, which
-    is what the leading dash is for; GNOME Shell keeps them on the surface's
-    theme node, where the blur extension reads them. Without that extension
-    they do nothing at all.
-
-    The extension leaves a surface alone while it is not translucent, so these
-    can be stated once and for all: the bar in the overview, or a solid docked
-    bar, has nothing to show through it and is not blurred.
-    """
-    # Each surface, how far it is blurred and how bright the blurred copy
-    # behind it is left
-    surfaces = [
-        ("#panel", options.blur_radius, 1),                # the top bar, floating or docked
-        (".popup-menu-content", options.blur_radius, 1),   # panel menus, quick settings, the calendar
-    ]
-    if options.dock_like_panel:
-        surfaces.append(("#dashtodockContainer #dash .dash-background", options.blur_radius, 1))
-    if options.blur_background:
-        # The overview is a whole screen rather than a pane held up to the eye,
-        # and takes a little dimming so that the names under the application
-        # icons stay legible over a bright wallpaper.
-        surfaces.append(("#overviewGroup", options.blur_background_radius, OVERVIEW_DIM))
-        # The wallpaper behind the lock screen, which the Shell blurs and
-        # dims by itself: only how far is said, and its own dimming is kept.
-        surfaces.append((".screen-shield-background", options.blur_background_radius, None))
-
-        # GNOME fills the overview with a solid color: make it glass, so that
-        # there is something to blur behind it. Everything else is translucent
-        # already, by the opacity preferences.
-        _replace_once(f"{sass_dir}/widgets/_overview.scss", "background-color: $system_base_color;",
-                      f"background-color: {_transparent('$system_base_color', OVERVIEW_OPACITY)};")
-
-    rules = "".join(f"""
-{surface} {{
-  -gattuccino-blur-radius: {radius}px;""" + (f"""
-  -gattuccino-blur-brightness: {brightness:g};""" if brightness is not None else "") + """
-}""" for surface, radius, brightness in surfaces)
-
-    # Last of all the widgets, so that nothing of GNOME's own can come after it
-    with open(f"{sass_dir}/_widgets.scss", "a", encoding="utf-8") as f:
-        f.write(f"""
-// Blur behind the surfaces the desktop shows through. Read by the Gattuccino
-// blur extension, ignored by everything else.{rules}
-""")
-
-
 def _apply_dock(sass_dir: str, options: ShellOptions):
     """Give the dock of Dash to Dock (and Ubuntu Dock, which is the same
     extension) the color and opacity of the top bar.
@@ -559,8 +499,6 @@ def build_css(source_theme_dir: str, flavor: str, accent: str, options: ShellOpt
             _apply_floating_panel(sass_dir, options)
         if options.dock_like_panel:
             _apply_dock(sass_dir, options)
-        if options.blur:
-            _apply_blur(sass_dir, options)
 
         variant = "dark" if palette.DARK[flavor] else "light"
         return compile_scss(f"{theme_src}/gnome-shell-{variant}.scss")
