@@ -100,3 +100,19 @@ class PreferencesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_every_preference_is_in_a_group_for_the_interfaces(self):
+        fields = prefs.all_fields()
+        self.assertEqual(sorted(f.name for f in fields), sorted(prefs.SPECS))   # none left out, none twice
+        p = prefs.Preferences()
+        shown = [f.name for f in fields if prefs.visible(f, p)]
+        # the ones that depend on a switch are shown only while it is on
+        self.assertNotIn("blur_radius", shown)
+        self.assertNotIn("panel_gap", shown)
+        p.blur = p.floating_panel = True
+        shown = [f.name for f in fields if prefs.visible(f, p)]
+        self.assertIn("blur_radius", shown)
+        self.assertIn("panel_gap", shown)
+        # and the kinds say what to draw
+        kinds = {f.name: f.kind for f in fields}
+        self.assertEqual((kinds["blur"], kinds["flavor"], kinds["blur_radius"]), (prefs.SWITCH, prefs.CHOICE, prefs.TEXT))

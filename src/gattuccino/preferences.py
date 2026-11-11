@@ -192,6 +192,75 @@ FLOATING_ONLY = ("panel_gap", "panel_radius", "docked_panel_opacity")
 BLUR_ONLY = ("blur_radius", "blur_background", "blur_background_radius")
 
 
+# --- How the preferences are shown by the terminal and the window ---------------
+
+SWITCH, CHOICE, TEXT = "switch", "choice", "text"
+
+
+@dataclass(frozen=True)
+class Field:
+    """A preference as an interface shows it: where, as what, and when."""
+    name: str
+    spec: Spec
+    group: str
+    kind: str                      # SWITCH, CHOICE or TEXT
+    choices: tuple = ()            # the words of a CHOICE; for a TEXT, the ones that are also allowed
+    requires: Optional[str] = None  # shown only while this switch is on
+    live: bool = False             # changes in the running extension, with no apply
+
+    @property
+    def label(self) -> str:
+        return self.name.replace("_", " ").capitalize()
+
+    @property
+    def option(self) -> str:
+        return _option_name(self.name)
+
+
+def _option_name(name: str) -> str:
+    return "--" + name.replace("_", "-")
+
+
+# The groups, in the order shown, and the preferences in each
+GROUPS = (
+    ("Colors", ("flavor", "accent", "accent_selection")),
+    ("Top bar", ("panel_opacity", "popup_opacity", "floating_panel", "panel_gap", "panel_radius",
+                 "docked_panel_opacity")),
+    ("Dock", ("dock_like_panel", "dock_radius", "show_apps_icon")),
+    ("Blur", ("blur", "blur_radius", "blur_background", "blur_background_radius")),
+    ("Install", ("shell_theme", "gtk_theme", "flatpak", "shell_version")),
+)
+_CHOICES = {
+    "flavor": palette.DARK_FLAVORS,
+    "accent": (FOLLOW, *palette.ACCENTS),
+}
+_REQUIRES = {name: "floating_panel" for name in FLOATING_ONLY} | {name: "blur" for name in BLUR_ONLY}
+# What the extensions change while they run, once they read their own settings
+_LIVE = frozenset()
+
+
+def all_fields() -> list:
+    """Every preference, grouped and in the order an interface shows them."""
+    result = []
+    for group, names in GROUPS:
+        for name in names:
+            spec = SPECS[name]
+            if name in _CHOICES:
+                kind = CHOICE
+            elif spec.values == "yes, no":
+                kind = SWITCH
+            else:
+                kind = TEXT
+            result.append(Field(name, spec, group, kind, tuple(_CHOICES.get(name, ())),
+                                _REQUIRES.get(name), name in _LIVE))
+    return result
+
+
+def visible(field: Field, preferences) -> bool:
+    """Whether a field is worth showing: the ones that depend on a switch are not while it is off."""
+    return field.requires is None or bool(getattr(preferences, field.requires))
+
+
 @dataclass
 class Preferences:
     flavor: str = "mocha"

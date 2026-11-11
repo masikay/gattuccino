@@ -19,7 +19,7 @@ Until October 2026 this project was itself called `gnome-catppuccin`. An install
 - The [User Themes](https://extensions.gnome.org/extension/19/user-themes/) extension, to load the Shell theme (package `gnome-shell-extension-user-theme` or `gnome-shell-extensions`, depending on the distribution)
 - An internet connection the first time, and after each GNOME upgrade, to download the GNOME Shell stylesheets the theme is built from
 
-Optional: the [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) theme, for GTK 3 applications to follow.
+Optional: the [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) theme, for GTK 3 applications to follow, and [Textual](https://textual.textualize.io/) (package `python3-textual`, or `pip install textual`) for the menus of `configure`, which asks its questions one by one without it.
 
 ## Quick start
 
@@ -29,7 +29,7 @@ cd gattuccino
 ./gattuccino configure
 ```
 
-`configure` asks for each preference in turn, then offers to apply them. Afterwards, log out and back in so that GNOME Shell loads the extensions.
+`configure` opens a screen of menus: the groups of preferences on the left and the ones in the group on the right, to move about with the arrow keys, Tab and Space. `Ctrl+S` saves, `Ctrl+A` saves and applies, and `Ctrl+Q` leaves (it asks first if there are changes). Without Textual, or with `--plain`, it asks for each preference in turn instead, then offers to apply them. Afterwards, log out and back in so that GNOME Shell loads the extensions.
 
 With the defaults you get Latte for the light style and Mocha for the dark style, with the accent picked in Settings, in the Shell and in applications.
 
@@ -37,7 +37,7 @@ With the defaults you get Latte for the light style and Mocha for the dark style
 
 | Command | What it does |
 |---|---|
-| `./gattuccino configure` | Ask for every preference, save them, and offer to apply |
+| `./gattuccino configure` | Show the menus (or ask for every preference with `--plain`), save them, and offer to apply |
 | `./gattuccino configure --flavor frappe --apply` | Change just the preferences given, and apply |
 | `./gattuccino apply` | Build and install what the preferences say; remove what they no longer ask for |
 | `./gattuccino show` | Print the preferences |

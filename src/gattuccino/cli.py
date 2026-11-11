@@ -65,6 +65,18 @@ def _ask(preferences):
         print()
 
 
+def _menus(preferences, desktop):
+    """The screen with menus, or None when there is none to show: Textual is
+    not installed, or the person asked for the questions."""
+    try:
+        from . import tui
+    except ImportError:
+        print("The menus need Textual (package python3-textual, or `pip install textual`): "
+              "asking the questions instead.\n")
+        return None
+    return tui.run(preferences, desktop.preferences_path)
+
+
 def _yes(question: str) -> bool:
     try:
         return input(f"{question} [Y/n]: ").strip().lower() in ("", "y", "yes")
@@ -80,6 +92,17 @@ def _configure(args, desktop):
         for name, value in given.items():
             preferences.set(name, ("yes" if value else "no") if isinstance(value, bool) else value)
         apply_now = args.apply
+    elif sys.stdin.isatty() and sys.stdout.isatty():
+        result = None if args.plain else _menus(preferences, desktop)
+        if result is None:
+            _ask(preferences)
+            apply_now = args.apply or None  # ask below
+        elif result.action is None:
+            print("Nothing was changed.")
+            return
+        else:
+            preferences = result.preferences
+            apply_now = args.apply or result.action == "apply"
     elif sys.stdin.isatty():
         _ask(preferences)
         apply_now = args.apply or None  # ask below
@@ -124,10 +147,13 @@ def main(argv=None) -> int:
 
     configure = commands.add_parser(
         "configure", help="choose your preferences",
-        description="Without options, asks for each preference in turn. "
+        description="Without options, shows menus to move about with the arrow keys (they need "
+                    "Textual), or asks for each preference in turn. "
                     "With options, changes just those and keeps the rest.")
     _add_preference_options(configure)
     configure.add_argument("--apply", action="store_true", help="apply the preferences right away")
+    configure.add_argument("--plain", action="store_true",
+                           help="ask the questions one by one instead of showing menus")
 
     commands.add_parser("apply", help="build and install what the preferences say",
                         description="Builds the shell theme for your GNOME Shell version and installs "
