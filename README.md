@@ -19,7 +19,7 @@ Until October 2026 this project was itself called `gnome-catppuccin`. An install
 - The [User Themes](https://extensions.gnome.org/extension/19/user-themes/) extension, to load the Shell theme (package `gnome-shell-extension-user-theme` or `gnome-shell-extensions`, depending on the distribution)
 - An internet connection the first time, and after each GNOME upgrade, to download the GNOME Shell stylesheets the theme is built from
 
-Optional: the [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) theme, for GTK 3 applications to follow, [Textual](https://textual.textualize.io/) (package `python3-textual`, or `pip install textual`) for the menus of `configure`, which asks its questions one by one without it, and GTK 4 with libadwaita for Python (package `python3-gobject`, which a GNOME session has) for the window of `gui`.
+Optional: the [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) theme, for GTK 3 applications to follow, and GTK 4 with libadwaita for Python (package `python3-gobject`, which a GNOME session has) for the window of `gui`.
 
 ## Quick start
 
@@ -29,7 +29,7 @@ cd gattuccino
 ./gattuccino configure
 ```
 
-`configure` opens a screen of menus: the groups of preferences on the left and the ones in the group on the right, to move about with the arrow keys, Tab and Space. `Ctrl+S` saves, `Ctrl+A` saves and applies, and `Ctrl+Q` leaves (it asks first if there are changes). Without Textual, or with `--plain`, it asks for each preference in turn instead, then offers to apply them. Afterwards, log out and back in so that GNOME Shell loads the extensions.
+`configure` asks for each preference in turn, then offers to apply them. Afterwards, log out and back in so that GNOME Shell loads the extensions. To change them later with a window instead, once the theme is installed, see [The window](#the-window).
 
 With the defaults you get Latte for the light style and Mocha for the dark style, with the accent picked in Settings, in the Shell and in applications.
 
@@ -37,7 +37,7 @@ With the defaults you get Latte for the light style and Mocha for the dark style
 
 | Command | What it does |
 |---|---|
-| `./gattuccino configure` | Show the menus (or ask for every preference with `--plain`), save them, and offer to apply |
+| `./gattuccino configure` | Ask for every preference, save them, and offer to apply |
 | `./gattuccino configure --flavor frappe --apply` | Change just the preferences given, and apply |
 | `./gattuccino apply` | Build and install what the preferences say; remove what they no longer ask for |
 | `./gattuccino gui` | Open the window with the preferences (also in the app grid, as *Gattuccino*, once `apply` has run) |
@@ -284,7 +284,7 @@ tests/                      tests
 python3 -m unittest discover -s tests -t .
 ```
 
-The tests run the real command in a throwaway home folder, with stand-ins for `gsettings`, `gnome-extensions`, `glib-compile-schemas`, `flatpak` and `gnome-shell`, so they change nothing on the machine. The terminal menus are driven with keys through Textual, and the window is built with GTK and changed as a person would, but never shown; both are skipped if what they need (Textual, GTK 4 and a display) is not there. The extensions are tested with [Node.js](https://nodejs.org) against stand-ins for GNOME Shell's objects; those tests are skipped if it is not installed. The first run downloads the GNOME Shell stylesheets into `tests/.cache`.
+The tests run the real command in a throwaway home folder, with stand-ins for `gsettings`, `gnome-extensions`, `glib-compile-schemas`, `flatpak` and `gnome-shell`, so they change nothing on the machine. The window is built with GTK and changed as a person would, but never shown; those tests are skipped if GTK 4 or a display is not there. The extensions are tested with [Node.js](https://nodejs.org) against stand-ins for GNOME Shell's objects; those tests are skipped if it is not installed. The first run downloads the GNOME Shell stylesheets into `tests/.cache`.
 
 ## Credits and license
 

@@ -192,7 +192,7 @@ FLOATING_ONLY = ("panel_gap", "panel_radius", "docked_panel_opacity")
 BLUR_ONLY = ("blur_radius", "blur_background", "blur_background_radius")
 
 
-# --- How the preferences are shown by the terminal and the window ---------------
+# --- How the preferences are shown by the window --------------------------------
 
 SWITCH, CHOICE, TEXT, FILE = "switch", "choice", "text", "file"
 
