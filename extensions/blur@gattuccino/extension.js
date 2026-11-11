@@ -293,6 +293,7 @@ class Backdrop {
         const wasShown = this._shown;
         this._shown = shown;
         this._actor.opacity = opacity;
+        this._blur.enabled = shown;
         if (shown && !wasShown)
             this._place({restack: true});
     }
@@ -557,7 +558,7 @@ class OverviewWallpaper {
                 opacity: 0,
             });
             drawWallpaper(widget, monitor, picture);
-            widget.add_effect_with_name('blur', new Shell.BlurEffect({mode: Shell.BlurMode.ACTOR}));
+            widget.add_effect_with_name('blur', new Shell.BlurEffect({mode: Shell.BlurMode.ACTOR, enabled: false}));
             uiGroup.insert_child_below(widget, overview);
             this._widgets.push(widget);
         }
@@ -585,6 +586,8 @@ class OverviewWallpaper {
             // Kept right behind the overview, whatever has been added since
             uiGroup.set_child_below_sibling(widget, overview);
             widget.opacity = wanted ? 255 : 0;
+            // A blur that is not wanted does not run at all, not even unseen
+            widget.get_effect('blur').enabled = wanted;
         }
     }
 
@@ -596,8 +599,10 @@ class OverviewWallpaper {
 
     hide() {
         this._shown = false;
-        for (const widget of this._widgets)
+        for (const widget of this._widgets) {
             widget.opacity = 0;
+            widget.get_effect('blur').enabled = false;
+        }
     }
 }
 
@@ -618,6 +623,7 @@ class LockWallpaper {
         this._settings = settings;
         this._prefs = prefs;
         this._dressed = new Set();   // [widget, [what was hidden], [what was added]]
+        this._unblurred = new Map(); // widget -> the blur of the Shell, taken off it
         this._signals = [];
         this._idles = new Set();
 
@@ -671,18 +677,26 @@ class LockWallpaper {
     }
 
     _dress(widget) {
-        const picture = this._settings.picture();
-        if (!picture || [...this._dressed].some(([dressed]) => dressed === widget))
-            return;
-        const monitor = Main.layoutManager.monitors.find(each => each.x === widget.x && each.y === widget.y);
-        if (!monitor)
+        if ([...this._dressed].some(([dressed]) => dressed === widget) || this._unblurred.has(widget))
             return;
 
         // How far is the extension's own setting, which is there on the lock
-        // screen too, where the theme's stylesheet is not; with the background
-        // blur turned off the lock screen is left exactly as the Shell makes it.
+        // screen too, where the theme's stylesheet is not
         const radius = this._prefs.get_boolean('background') ? this._prefs.get_int('background-radius') : 0;
-        if (radius <= 0)
+        if (radius <= 0) {
+            // Not blurred is not blurred by the Shell either: its own blur is of
+            // a wallpaper that cannot be drawn into a buffer, and comes up grey
+            // with the clock and the icons ghosted in it. What it blurs is
+            // drawn as it is instead.
+            this._unblur(widget);
+            return;
+        }
+
+        const picture = this._settings.picture();
+        if (!picture)
+            return;
+        const monitor = Main.layoutManager.monitors.find(each => each.x === widget.x && each.y === widget.y);
+        if (!monitor)
             return;
 
         // What the Shell put in the widget is hidden and not taken out, so
@@ -702,9 +716,18 @@ class LockWallpaper {
         this._dressed.add([widget, hidden, added, was]);
     }
 
+    /** The Shell's blur taken off a widget, to be put back as it was found */
+    _unblur(widget) {
+        const effect = widget.get_effect('blur');
+        if (!effect)
+            return;
+        widget.remove_effect(effect);
+        this._unblurred.set(widget, effect);
+    }
+
     /** The wallpaper was changed while the screen is locked */
     refresh() {
-        const widgets = [...this._dressed].map(([widget]) => widget);
+        const widgets = [...this._dressed].map(([widget]) => widget).concat([...this._unblurred.keys()]);
         this._undress();
         for (const widget of widgets) {
             try {
@@ -730,6 +753,14 @@ class LockWallpaper {
             }
         }
         this._dressed.clear();
+        for (const [widget, effect] of this._unblurred) {
+            try {
+                widget.add_effect_with_name('blur', effect);
+            } catch (e) {
+                // the widget has gone with the dialog
+            }
+        }
+        this._unblurred.clear();
     }
 }
 

@@ -345,12 +345,16 @@ test('the overview', async t => {
         setPref('background-radius', 10);
         assert.equal(wallpapers()[0].opacity, 255);
         assert.equal(wallpapers()[0].get_effect('blur').radius, 10);
+        assert.equal(wallpapers()[0].get_effect('blur').enabled, true);
         setPref('background', false);
         assert.equal(wallpapers()[0].opacity, 0);
+        assert.equal(wallpapers()[0].get_effect('blur').enabled, false);   // not running at all, not even unseen
         setPref('background', true);
         assert.equal(wallpapers()[0].opacity, 255);
+        assert.equal(wallpapers()[0].get_effect('blur').enabled, true);
         setPref('background-radius', 0);
         assert.equal(wallpapers()[0].opacity, 0);
+        assert.equal(wallpapers()[0].get_effect('blur').enabled, false);
         Main.overview.emit('hidden');
         reset();
     });
@@ -452,13 +456,36 @@ test('the lock screen', async t => {
         assert.equal(widget.get_effect('blur').brightness, 0.65);
     });
 
-    await t.test('is left as the Shell makes it with the background blur off', () => {
+    // The Shell's own blur is of a wallpaper that cannot be drawn into a buffer:
+    // grey, with the clock and the icons ghosted in it. Not blurred means not blurred.
+    await t.test('is not blurred at all, by the Shell either, with the background blur off or at 0', () => {
+        for (const [key, value] of [['background', false], ['background-radius', 0]]) {
+            setPref(key, value);
+            const dialog = lock();
+            const [widget] = dialog._backgroundGroup.get_children();
+            assert.equal(widget.get_effect('blur'), null, key);       // nothing to blur with
+            assert.ok(!widget.style);                                 // and the Shell's wallpaper as it is
+            assert.notEqual(widget.get_children()[0].visible, false);
+
+            // and blurred again, by the extension, once it is turned on
+            setPref(key, key === 'background' ? true : 32);
+            assert.equal(widget.get_effect('blur').radius, 32);
+            assert.match(widget.style, /wall.jpg/);
+            setPref('background', false);
+            assert.equal(widget.get_effect('blur'), null);
+            setPref('background', true);
+            reset();
+        }
+    });
+
+    await t.test('gives the Shell its blur back when it goes', () => {
         setPref('background', false);
         const dialog = lock();
         const [widget] = dialog._backgroundGroup.get_children();
-        assert.ok(!widget.style);
+        assert.equal(widget.get_effect('blur'), null);
+        extension.disable();
         assert.equal(widget.get_effect('blur').radius, 90);
-        assert.notEqual(widget.get_children()[0].visible, false);
+        extension.enable();
         reset();
     });
 
