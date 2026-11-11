@@ -90,9 +90,28 @@ class GuiTest(unittest.TestCase):
         spin.set_value(18)
         self.assertEqual(self.saved().dock_radius, 18)
 
+    def test_the_icon_of_the_dock_is_the_one_that_comes_with_the_project_unless_chosen(self):
+        choice, entry = self.row("Show apps icon"), self.row("File")
+        self.assertEqual(choice.get_selected(), 0)        # the icon of the flavor in use
+        self.assertFalse(entry.get_visible())
+        choice.set_selected(1)                            # GNOME's own
+        self.assertEqual(self.saved().show_apps_icon, "gnome")
+        choice.set_selected(2)                            # a file of one's own
+        self.assertTrue(entry.get_visible())
+        self.assertEqual(self.saved().show_apps_icon, "gnome")   # nothing to take before there is a file
+        mine = os.path.join(self.home.home, "mine.svg")
+        with open(mine, "w") as f:
+            f.write("<svg/>")
+        entry.set_text(mine)
+        entry.emit("apply")
+        self.assertEqual(self.saved().show_apps_icon, mine)
+        choice.set_selected(0)
+        self.assertIsNone(self.saved().show_apps_icon)
+
     def test_a_value_that_is_not_allowed_is_refused_and_marked(self):
-        row = self.row("Show apps icon")
-        row.set_text(os.path.join(self.home.home, "missing.svg"))
-        row.emit("apply")
-        self.assertTrue(row.has_css_class("error"))
+        self.row("Show apps icon").set_selected(2)
+        entry = self.row("File")
+        entry.set_text(os.path.join(self.home.home, "missing.svg"))
+        entry.emit("apply")
+        self.assertTrue(entry.has_css_class("error"))
         self.assertIsNone(self.saved().show_apps_icon)

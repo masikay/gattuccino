@@ -170,6 +170,7 @@ export function setPref(key, value) {
 }
 export class Extension {
     get uuid() { return 'catppuccin-accent@gattuccino'; }
+    get path() { return '/home/u/.local/share/gnome-shell/extensions/catppuccin-accent@gattuccino'; }
     getSettings() { return prefs; }
 }
 

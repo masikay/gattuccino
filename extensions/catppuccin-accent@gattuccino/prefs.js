@@ -56,25 +56,53 @@ export default class AccentPreferences extends ExtensionPreferences {
         settings.connect('changed::dock-radius', show);
         show();
 
-        // The icon of the Show Applications button
-        const icon = new Adw.EntryRow({title: 'Show Applications icon'});
-        icon.text = settings.get_string('show-apps-icon');
-        icon.connect('apply', () => settings.set_string('show-apps-icon', icon.text.trim()));
-        icon.show_apply_button = true;
+        // The icon of the Show Applications button: the one of the flavor in use
+        // that comes with the extension, GNOME's own, or a file of the person's
+        const source = new Adw.ComboRow({
+            title: 'Show Applications icon',
+            subtitle: 'The icon of the button that opens the app grid.',
+            model: Gtk.StringList.new(['Catppuccin, of the flavor in use', "GNOME's own", 'Custom file']),
+        });
+        const icon = new Adw.EntryRow({title: 'File', show_apply_button: true});
         const choose = new Gtk.Button({icon_name: 'document-open-symbolic', valign: Gtk.Align.CENTER, tooltip_text: 'Choose a file'});
         choose.add_css_class('flat');
         choose.connect('clicked', () => this._chooseIcon(window, settings, icon));
         icon.add_suffix(choose);
-        settings.connect('changed::show-apps-icon', () => {
-            if (icon.text !== settings.get_string('show-apps-icon'))
-                icon.text = settings.get_string('show-apps-icon');
-        });
+        group.add(source);
         group.add(icon);
 
+        let showing = false;
+        const showIcon = () => {
+            showing = true;
+            const value = settings.get_string('show-apps-icon');
+            source.selected = value === '' ? 0 : value === 'gnome' ? 1 : 2;
+            icon.visible = source.selected === 2;
+            if (source.selected === 2 && icon.text !== value)
+                icon.text = value;
+            showing = false;
+        };
+        source.connect('notify::selected', () => {
+            if (showing)
+                return;
+            // A file is written when it is chosen or applied, not before there is one
+            if (source.selected === 0)
+                settings.set_string('show-apps-icon', '');
+            else if (source.selected === 1)
+                settings.set_string('show-apps-icon', 'gnome');
+            icon.visible = source.selected === 2;
+        });
+        icon.connect('apply', () => {
+            const path = icon.text.trim();
+            if (path)
+                settings.set_string('show-apps-icon', path);
+        });
+        settings.connect('changed::show-apps-icon', showIcon);
+        showIcon();
+
         const note = new Adw.ActionRow({
-            title: 'An .svg or .png file',
-            subtitle: 'Leave it empty for the icon GNOME draws. {flavor} in the name stands for the flavor in use: ' +
-                'icons/show-apps-{flavor}.svg is the icon of Latte in the light style and of the dark flavor in the dark one.',
+            title: 'A custom file is an .svg or .png',
+            subtitle: '{flavor} in its name stands for the flavor in use: apps-{flavor}.svg is apps-latte.svg in the ' +
+                'light style and, say, apps-mocha.svg in the dark one.',
         });
         note.add_css_class('dim-label');
         group.add(note);

@@ -31,8 +31,11 @@ WORDS = {
     "round": "Round",
     "dock": "Dash to Dock's own",
     "same": "Same as the top bar",
+    "default": "Catppuccin, of the flavor in use",
+    "gnome": "GNOME's own",
 }
 CUSTOM = "Custom"
+CUSTOM_FILE = "Custom file"
 
 
 def number_text(value: float, digits: int) -> str:
@@ -94,6 +97,8 @@ class PreferencesWindow(Adw.ApplicationWindow):
             return [self.switch_row(field)]
         if field.kind == prefs.CHOICE:
             return [self.choice_row(field)]
+        if field.kind == prefs.FILE:
+            return self.file_rows(field)
         if field.number and field.words:
             return self.number_or_word_rows(field)
         if field.number:
@@ -160,24 +165,48 @@ class PreferencesWindow(Adw.ApplicationWindow):
         spin.connect("notify::value", lambda r, _p: self.change(field, spin, number_text(r.get_value(), digits)))
         return [choice, spin]
 
+    def file_rows(self, field):
+        """A word (the icons that come with the project, GNOME's own) or a file of one's own."""
+        words = list(field.words)
+        text = self.controller.text(field.name)
+        choice = Adw.ComboRow(model=Gtk.StringList.new([WORDS.get(w, w) for w in words] + [CUSTOM_FILE]))
+        self._title(choice, field)
+        choice.set_selected(words.index(text) if text in words else len(words))
+        entry = Adw.EntryRow(title="File", show_apply_button=True)
+        entry.set_text("" if text in words else text)
+        entry.set_visible(text not in words)
+        chooser = Gtk.Button(icon_name="document-open-symbolic", valign=Gtk.Align.CENTER,
+                             tooltip_text="Choose a file")
+        chooser.add_css_class("flat")
+        chooser.connect("clicked", lambda _b: self.choose_file(field, entry))
+        entry.add_suffix(chooser)
+
+        def chosen(_row, _param):
+            index = choice.get_selected()
+            entry.set_visible(index >= len(words))
+            if index < len(words):
+                self.change(field, choice, words[index])   # a file is taken when it is given, not before
+
+        def applied(row):
+            path = row.get_text().strip()
+            if path:
+                self.change(field, entry, path)
+
+        choice.connect("notify::selected", chosen)
+        entry.connect("apply", applied)
+        return [choice, entry]
+
     def entry_row(self, field):
         row = Adw.EntryRow(title=field.label, show_apply_button=True)
         text = self.controller.text(field.name)
-        row.set_text("" if text == prefs.ICON_DEFAULT else text)
+        row.set_text(text)
         row.set_tooltip_text(field.spec.help)
-        row.connect("apply", lambda r: self.change(field, row, r.get_text().strip() or (
-            prefs.ICON_DEFAULT if field.kind == prefs.FILE else "")))
+        row.connect("apply", lambda r: self.change(field, row, r.get_text().strip()))
         if field.live:
             tag = Gtk.Label(label="live", valign=Gtk.Align.CENTER)
             tag.add_css_class("dim-label")
             tag.add_css_class("caption")
             row.add_suffix(tag)
-        if field.kind == prefs.FILE:
-            choose = Gtk.Button(icon_name="document-open-symbolic", valign=Gtk.Align.CENTER,
-                                tooltip_text="Choose a file")
-            choose.add_css_class("flat")
-            choose.connect("clicked", lambda _b: self.choose_file(field, row))
-            row.add_suffix(choose)
         return row
 
     # --- Changing ---------------------------------------------------------

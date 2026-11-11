@@ -83,7 +83,7 @@ def _text_of_setting(name: str, value) -> str:
     if key.kind == BOOL:
         return "yes" if value else "no"
     if name == "show_apps_icon":
-        return value or prefs.ICON_DEFAULT
+        return value or prefs.ICON_DEFAULT   # the setting is empty for the icons that come with the project
     return str(value)
 
 

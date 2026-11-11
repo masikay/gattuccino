@@ -66,7 +66,7 @@ class PreferencesTest(unittest.TestCase):
         icon = os.path.join(self.directory.name, "apps.svg")
         with open(icon, "w") as f:
             f.write("<svg/>")
-        for written, expected in (("default", None), ("", None), (icon, icon)):
+        for written, expected in (("default", None), ("", None), ("gnome", "gnome"), (icon, icon)):
             with open(self.path, "w") as f:
                 f.write(f"[preferences]\nshow_apps_icon = {written}\n")
             self.assertEqual(prefs.load(self.path).show_apps_icon, expected, written)

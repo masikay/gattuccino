@@ -255,6 +255,40 @@ test('catppuccin accent', async t => {
         setPref('show-apps-icon', '');
     });
 
+    // With nothing set, it is the icon of the flavor that comes with the
+    // extension: a path is for an icon of the person's own
+    await t.test('has the icon of the flavor that comes with the extension unless told otherwise', () => {
+        const EXTENSION = '/home/u/.local/share/gnome-shell/extensions/catppuccin-accent@gattuccino';
+        const own = flavor => `${EXTENSION}/icons/show-apps-${flavor}.svg`;
+        files.set(own('mocha'), '<svg/>');
+        files.set(own('latte'), '<svg/>');
+        const {icon} = dock();
+
+        switchTheme('gattuccino-mocha-teal');
+        setPref('show-apps-icon', '');
+        settle();
+        assert.equal(icon().gicon.get_file().get_path(), own('mocha'));
+        switchTheme('gattuccino-latte-teal');
+        settle();
+        assert.equal(icon().gicon.get_file().get_path(), own('latte'));
+
+        // 'gnome' keeps the icon GNOME draws
+        setPref('show-apps-icon', 'gnome');
+        settle();
+        assert.equal(icon().icon_name, 'view-app-grid-user-symbolic');
+        assert.equal(icon().style, '');
+
+        // and an icon of the person's own takes the place of the one that comes with it
+        files.set('/home/u/art/mine.svg', '');
+        setPref('show-apps-icon', '/home/u/art/mine.svg');
+        settle();
+        assert.equal(icon().gicon.get_file().get_path(), '/home/u/art/mine.svg');
+
+        files.delete(own('mocha'));
+        files.delete(own('latte'));
+        setPref('show-apps-icon', '');
+    });
+
     await t.test('gives the dock the corners the settings say, and the room that goes with them', () => {
         const {background, container, restyle} = dock();
         setPref('dock-radius', 'round');

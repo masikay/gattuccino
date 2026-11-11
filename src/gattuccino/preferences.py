@@ -92,7 +92,8 @@ def _dock_radius(text: str):
     return ROUND if value == ROUND else _pixels(100)(text)
 
 
-ICON_DEFAULT = "default"   # show_apps_icon: the icon GNOME draws
+ICON_DEFAULT = "default"   # show_apps_icon: the icon of the flavor in use, which comes with the project
+ICON_GNOME = "gnome"       # show_apps_icon: the icon GNOME draws
 ICON_SUFFIXES = (".svg", ".png")
 ICON_FLAVOR = "{flavor}"   # show_apps_icon: stands for the flavor in use
 
@@ -108,9 +109,11 @@ def _icon_file(text: str):
     value = text.strip()
     if value.lower() in ("", ICON_DEFAULT):
         return None
+    if value.lower() == ICON_GNOME:
+        return ICON_GNOME
     path = os.path.abspath(os.path.expanduser(value))
     if not path.lower().endswith(ICON_SUFFIXES):
-        raise PreferenceError("expected an .svg or .png file, or 'default'")
+        raise PreferenceError(f"expected an .svg or .png file, '{ICON_GNOME}' or '{ICON_DEFAULT}'")
     files = icon_files(path)
     if not any(os.path.isfile(file) for file in files):
         raise PreferenceError(f"{files[0] if len(files) == 1 else path} was not found")
@@ -169,10 +172,11 @@ SPECS = {
                         "Corner radius of the dock of Dash to Dock; 'round' is as round as the floating top bar, "
                         f"'{DOCK}' keeps the radius Dash to Dock draws",
                         none_as=DOCK),
-    "show_apps_icon": Spec(_icon_file, f"{ICON_DEFAULT}, or an .svg or .png file",
+    "show_apps_icon": Spec(_icon_file, f"{ICON_DEFAULT}, {ICON_GNOME}, or an .svg or .png file",
                            "Icon of the Show Applications button of the dock of Dash to Dock; "
-                           f"{ICON_FLAVOR} in the name stands for the flavor in use, so that there can be one for "
-                           f"each; '{ICON_DEFAULT}' keeps the one GNOME draws",
+                           f"'{ICON_DEFAULT}' is the one of the flavor in use that comes with this project, "
+                           f"'{ICON_GNOME}' keeps the one GNOME draws, and a file of your own can have "
+                           f"{ICON_FLAVOR} in its name for the flavor in use",
                            none_as=ICON_DEFAULT),
     "blur": Spec(_blur, "yes, no",
                  "Blur the desktop behind the top bar, popup menus, the overview and the dock"),
@@ -252,6 +256,7 @@ _WORDS = {
     "panel_radius": (ROUND,),
     "docked_panel_opacity": ("same",),
     "dock_radius": (DOCK, ROUND),
+    "show_apps_icon": (ICON_DEFAULT, ICON_GNOME),
 }
 _REQUIRES = {name: "floating_panel" for name in FLOATING_ONLY} | {name: "blur" for name in BLUR_ONLY}
 # What the extensions change while they run: they read these from settings of
@@ -359,7 +364,9 @@ def load(path: str) -> Preferences:
                 # `apply` says it is missing.
                 value = text.strip()
                 preferences.show_apps_icon = (
-                    None if value.lower() in ("", ICON_DEFAULT) else os.path.abspath(os.path.expanduser(value)))
+                    None if value.lower() in ("", ICON_DEFAULT)
+                    else ICON_GNOME if value.lower() == ICON_GNOME
+                    else os.path.abspath(os.path.expanduser(value)))
                 continue
             if name == "flavor" and text.strip().lower() == palette.LIGHT_FLAVOR:
                 continue  # written by an earlier version: latte now comes with every dark flavor

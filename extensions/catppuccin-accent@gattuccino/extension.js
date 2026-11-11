@@ -19,9 +19,11 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 // - the dock of Dash to Dock: loads gattuccino-dock.css, the accent
 //   rules the theme in use was built with, if it has them;
 // - the dock of Dash to Dock, as its own settings say while this runs
-//   (dock-radius, and show-apps-icon, in which {flavor} stands for the flavor
-//   in use): the corners of the dock, and the icon of its Show Applications
-//   button, which follows the style as the theme is switched;
+//   (dock-radius, and show-apps-icon: the icon of the flavor in use that comes
+//   with the extension, GNOME's own, or a file of the person's, in which
+//   {flavor} stands for the flavor in use): the corners of the dock, and the
+//   icon of its Show Applications button, which follows the style as the
+//   theme is switched;
 // - the lock screen: the same for gattuccino-lock.css. The Shell runs the
 //   lock screen with its own stylesheet and not the theme's, so the accent
 //   there is a stylesheet of an extension too, which this one keeps loaded
@@ -372,11 +374,14 @@ export default class CatppuccinAccentExtension extends Extension {
         });
     }
 
-    // The icon file of the flavor in use, if the settings name one that is there
+    // The icon file of the flavor in use, if there is one: the one that comes
+    // with the extension unless the setting says otherwise, or none when it says
+    // 'gnome', and a file of the person's own, which may have {flavor} in its name
     _iconFile() {
-        const pattern = this._prefs.get_string('show-apps-icon');
-        if (!pattern)
+        const setting = this._prefs.get_string('show-apps-icon');
+        if (setting === 'gnome')
             return null;
+        const pattern = setting || GLib.build_filenamev([this.path, 'icons', 'show-apps-{flavor}.svg']);
         const name = this._userThemeSettings?.get_string('name') ?? '';
         const flavor = name.match(FLAVOR_OF_THEME)?.[1] ?? 'mocha';
         const file = Gio.File.new_for_path(pattern.replace('{flavor}', flavor));

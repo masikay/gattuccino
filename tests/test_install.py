@@ -353,6 +353,20 @@ class LiveSettingsTest(unittest.TestCase):
         self.assertEqual(self.setting("dock-radius"), "18")
         self.assertEqual(self.setting("show-apps-icon"), "")
 
+    def test_the_dock_icon_is_the_one_that_comes_with_the_extension_unless_said_otherwise(self):
+        self.apply()
+        self.assertEqual(self.setting("show-apps-icon"), "")              # nothing set: the icons that come with it
+        icons = f"{self.home.extensions}/{ACCENT}/icons"
+        for flavor in ("latte", "frappe", "macchiato", "mocha"):
+            self.assertTrue(os.path.exists(f"{icons}/show-apps-{flavor}.svg"), flavor)
+
+        self.apply("--show-apps-icon", "gnome")
+        self.assertEqual(self.setting("show-apps-icon"), "gnome")         # GNOME's own
+        self.apply("--show-apps-icon", self.icon)
+        self.assertEqual(self.setting("show-apps-icon"), self.icon)       # a path, for a file of one's own
+        self.apply("--show-apps-icon", "default")
+        self.assertEqual(self.setting("show-apps-icon"), "")
+
     def test_a_change_takes_effect_at_once_without_apply(self):
         self.apply("--dock-radius", "dock")
         self.home.ok("configure", "--dock-radius", "round")

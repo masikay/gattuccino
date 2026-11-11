@@ -10,7 +10,7 @@
     <key name="show-apps-icon" type="s">
       <default>''</default>
       <summary>Show Applications icon</summary>
-      <description>An .svg or .png file for the icon of the Show Applications button of the dock; {flavor} in the name stands for the flavor in use. Empty keeps the icon GNOME draws.</description>
+      <description>The icon of the Show Applications button of the dock. Empty is the icon of the flavor in use that comes with the extension, 'gnome' keeps the icon GNOME draws, and an .svg or .png file is that file, with {flavor} in its name standing for the flavor in use.</description>
     </key>
   </schema>
 </schemalist>

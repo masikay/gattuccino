@@ -90,12 +90,31 @@ test('the dock preferences', async t => {
         assert.equal(row(window, 'Corner radius').value, 24);
     });
 
-    await t.test('write the icon when it is applied, and show one that was set elsewhere', () => {
-        const icon = row(window, 'Show Applications icon');
-        icon.text = ' /home/u/apps-{flavor}.svg ';
-        icon.emit('apply');
+    await t.test('show the icon that comes with the extension unless another is chosen', () => {
+        assert.equal(row(window, 'Show Applications icon').selected, 0);
+        assert.equal(row(window, 'File').visible, false);
+    });
+
+    await t.test('write the icon as it is chosen: the extension\'s own, GNOME\'s, or a file', () => {
+        const source = row(window, 'Show Applications icon');
+        source.selected = 1;
+        assert.equal(settings.get_string('show-apps-icon'), 'gnome');
+        source.selected = 2;
+        assert.equal(row(window, 'File').visible, true);
+        assert.equal(settings.get_string('show-apps-icon'), 'gnome');   // nothing to write before there is a file
+        const file = row(window, 'File');
+        file.text = ' /home/u/apps-{flavor}.svg ';
+        file.emit('apply');
         assert.equal(settings.get_string('show-apps-icon'), '/home/u/apps-{flavor}.svg');
+        source.selected = 0;
+        assert.equal(settings.get_string('show-apps-icon'), '');
+    });
+
+    await t.test('show an icon that was set elsewhere', () => {
         settings._set('show-apps-icon', '/home/u/other.svg');
-        assert.equal(icon.text, '/home/u/other.svg');
+        assert.equal(row(window, 'Show Applications icon').selected, 2);
+        assert.equal(row(window, 'File').text, '/home/u/other.svg');
+        settings._set('show-apps-icon', 'gnome');
+        assert.equal(row(window, 'Show Applications icon').selected, 1);
     });
 });
