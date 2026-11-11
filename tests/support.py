@@ -30,18 +30,31 @@ if schema == "org.gnome.shell.extensions.user-theme":
     mode = open(os.environ["FAKE_USER_THEMES"]).read().strip()
     known = mode == "system" or (mode == "user" and schemadir is not None
                                  and os.path.exists(schemadir + "/gschemas.compiled"))
+# The settings of the extensions are in their own folders, compiled when they are installed
+if schema.startswith("org.gnome.shell.extensions.gattuccino-"):
+    known = (schema in store and schemadir is not None
+             and os.path.exists(schemadir + "/gschemas.compiled"))
 if not known:
     sys.exit(f"No such schema “{schema}”")
+DEFAULTS = {
+    "org.gnome.shell.extensions.gattuccino-blur": {"radius": 32, "background": True, "background-radius": 32},
+    "org.gnome.shell.extensions.gattuccino-floating-panel": {"gap": 6, "radius": "round"},
+    "org.gnome.shell.extensions.gattuccino-accent": {"dock-radius": "dock", "show-apps-icon": ""},
+}
 if command == "list-keys":
     print("\n".join(store[schema]))
 elif command == "get":
     value = store[schema][args[2]]
-    print("@as []" if value == [] else repr(value))
+    print("@as []" if value == [] else "true" if value is True else "false" if value is False else repr(value))
 elif command == "set":
-    store[schema][args[2]] = ast.literal_eval(re.sub(r"^@\w+\s+", "", args[3]))
+    text = re.sub(r"^@\w+\s+", "", args[3])
+    store[schema][args[2]] = {"true": True, "false": False}.get(text) if text in ("true", "false") else ast.literal_eval(text)
     json.dump(store, open(store_path, "w"))
     with open(os.environ["FAKE_LOG"], "a") as log:
         log.write(f"gsettings set {schema} {args[2]} {args[3]}\n")
+elif command == "reset-recursively":
+    store[schema] = dict(DEFAULTS[schema])
+    json.dump(store, open(store_path, "w"))
 '''
 
 # gnome-extensions: like GNOME Shell, it only knows the extensions that were
@@ -79,6 +92,12 @@ else:
 open(path, "w").write("\n".join(lines) + "\n")
 '''
 
+# glib-compile-schemas: all it has to do here is to leave the file that says it was done
+GLIB_COMPILE_SCHEMAS = r'''
+import os, sys
+open(os.path.join(sys.argv[1], "gschemas.compiled"), "w").close()
+'''
+
 GNOME_SHELL = 'import os\nprint("GNOME Shell " + open(os.environ["FAKE_SHELL_VERSION"]).read().strip())\n'
 
 
@@ -93,7 +112,7 @@ def test_sources():
 
 
 class FakeHome:
-    def __init__(self, user_themes="user", shell_version=SHELL_VERSION, commands=("gsettings", "gnome-extensions", "flatpak", "gnome-shell")):
+    def __init__(self, user_themes="user", shell_version=SHELL_VERSION, commands=("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas")):
         self.root = tempfile.mkdtemp(prefix="gattuccino-home-")
         self.home = f"{self.root}/home"
         self.bin = f"{self.root}/bin"
@@ -110,13 +129,17 @@ class FakeHome:
             "org.gnome.desktop.interface": {"accent-color": "teal", "color-scheme": "default", "gtk-theme": "Adwaita"},
             "org.gnome.shell": {"enabled-extensions": [USER_THEME_UUID], "disabled-extensions": []},
             "org.gnome.shell.extensions.user-theme": {"name": "Yaru"},
+            "org.gnome.shell.extensions.gattuccino-blur": {"radius": 32, "background": True, "background-radius": 32},
+            "org.gnome.shell.extensions.gattuccino-floating-panel": {"gap": 6, "radius": "round"},
+            "org.gnome.shell.extensions.gattuccino-accent": {"dock-radius": "dock", "show-apps-icon": ""},
         })
         self.set_user_themes(user_themes)
         self.set_known_extensions([USER_THEME_UUID])
         self.set_shell_version(shell_version)
         open(self._files["log"], "w").close()
 
-        scripts = {"gsettings": GSETTINGS, "gnome-extensions": GNOME_EXTENSIONS, "flatpak": FLATPAK, "gnome-shell": GNOME_SHELL}
+        scripts = {"gsettings": GSETTINGS, "gnome-extensions": GNOME_EXTENSIONS, "flatpak": FLATPAK, "gnome-shell": GNOME_SHELL,
+                   "glib-compile-schemas": GLIB_COMPILE_SCHEMAS}
         for name in commands:
             path = f"{self.bin}/{name}"
             with open(path, "w") as f:

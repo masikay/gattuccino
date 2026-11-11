@@ -47,10 +47,15 @@ class Panel extends Emitter {
     // classes change, as long as the panel is on screen, and on ensure_style()
     // otherwise.
     _applyMargins() {
-        const gap = this.classes.has('floating-panel') ? state.gap : 0;
+        let gap = this.classes.has('floating-panel') ? state.gap : 0;
+        // What is set on the panel itself wins over the theme
+        const inline = /margin:\s*(\d+)px/.exec(this._style ?? '');
+        if (inline && this.classes.has('floating-panel')) gap = Number(inline[1]);
         this.margin_top = this.margin_left = this.margin_right = gap;
         this._styleDirty = false;
     }
+    get style() { return this._style ?? ''; }
+    set style(value) { this._style = value; this._restyle(); }
     _restyle() { if (this.mapped) this._applyMargins(); else this._styleDirty = true; }
     add_style_class_name(name) { this.classes.add(name); this._restyle(); }
     remove_style_class_name(name) { if (this.classes.delete(name)) this._restyle(); }
@@ -82,7 +87,19 @@ export const Main = {
     panel: new Panel(),
     layoutManager: Object.assign(new Emitter(), {primaryMonitor: {index: 0, x: 0, y: 0, width: 1920, height: 1080}}),
 };
-export class Extension {}
+// The settings of the extension, changed while it runs
+export const prefs = Object.assign(new Emitter(), {
+    values: {},
+    get_int(key) { return this.values[key]; },
+    get_string(key) { return this.values[key]; },
+});
+export const resetPrefs = () => { prefs.values = {gap: 6, radius: 'round'}; };
+resetPrefs();
+export function setPref(key, value) {
+    prefs.values[key] = value;
+    prefs.emit('changed', key);
+}
+export class Extension { getSettings() { return prefs; } }
 
 export class Window {
     constructor(properties) { Object.assign(this, {y: 300, monitor: 0, minimized: false, type: 0, app: null, showing: true}, properties); }

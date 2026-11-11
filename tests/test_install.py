@@ -323,94 +323,75 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class ShowAppsIconTest(unittest.TestCase):
-    """The icon of the Show Applications button of the dock. It needs no theme,
-    so it runs wherever the installer does."""
+class LiveSettingsTest(unittest.TestCase):
+    """The preferences the extensions change while they run. They need no theme,
+    so this runs wherever the installer does."""
+
+    ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
 
     def setUp(self):
         self.home = FakeHome()
         self.addCleanup(self.home.close)
-        self.icon = f"{self.home.home}/apps.svg"
-        with open(self.icon, "w") as f:
-            f.write("<svg>mine</svg>")
-        folder = f"{self.home.data}/icons/hicolor/scalable/actions"
-        self.target = f"{folder}/view-app-grid-user-symbolic.svg"
-        # and the same without -symbolic: what is looked up when it is drawn in its own colors
-        self.plain = f"{folder}/view-app-grid-user.svg"
+        self.icon = f"{self.home.home}/apps-{{flavor}}.svg"
+        with open(f"{self.home.home}/apps-mocha.svg", "w") as f:
+            f.write("<svg/>")
 
     def apply(self, *args):
-        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args, "--apply")
+        return self.home.ok("configure", "--no-shell-theme", *args, "--apply")
 
-    def test_the_icon_is_put_where_dash_to_dock_asks_for_it_and_taken_away_again(self):
-        self.apply("--show-apps-icon", self.icon)
-        self.assertEqual(self.home.read(self.target), "<svg>mine</svg>")
-        self.assertEqual(self.home.read(self.plain), "<svg>mine</svg>")
+    def setting(self, key):
+        return self.home.settings(self.ACCENT_SCHEMA, key)
 
-        # another icon replaces it, and none at all takes it away
-        other = f"{self.home.home}/other.svg"
-        with open(other, "w") as f:
-            f.write("<svg>other</svg>")
-        self.apply("--show-apps-icon", other)
-        self.assertEqual(self.home.read(self.target), "<svg>other</svg>")
-        self.apply("--show-apps-icon", "default")
-        self.assertFalse(os.path.exists(self.target))
-        self.assertFalse(os.path.exists(self.plain))
+    def test_the_extension_is_given_its_settings_and_they_are_put_in_when_it_is_installed(self):
+        self.apply("--dock-radius", "round", "--show-apps-icon", self.icon)
+        schemas = f"{self.home.extensions}/{ACCENT}/schemas"
+        self.assertTrue(os.path.exists(f"{schemas}/gschemas.compiled"))   # compiled, or it cannot read them
+        self.assertEqual(self.setting("dock-radius"), "round")
+        self.assertEqual(self.setting("show-apps-icon"), self.icon)       # {flavor} and all
 
-    def test_uninstall_takes_it_away(self):
-        self.apply("--show-apps-icon", self.icon)
+        self.apply("--dock-radius", "18", "--show-apps-icon", "default")
+        self.assertEqual(self.setting("dock-radius"), "18")
+        self.assertEqual(self.setting("show-apps-icon"), "")
+
+    def test_a_change_takes_effect_at_once_without_apply(self):
+        self.apply("--dock-radius", "dock")
+        self.home.ok("configure", "--dock-radius", "round")
+        self.assertEqual(self.setting("dock-radius"), "round")
+
+    def test_a_change_made_in_the_settings_of_the_extension_is_not_undone(self):
+        self.apply("--dock-radius", "round")
+        # in the preferences window of the extension
+        self.home.set_setting(self.ACCENT_SCHEMA, "dock-radius", "24")
+        self.home.ok("configure", "--accent", "peach")
+        self.assertEqual(self.setting("dock-radius"), "24")
+        self.assertIn("dock-radius", self.home.ok("show"))
+        self.assertIn("24", self.home.ok("show"))
+
+    def test_the_file_wins_the_first_time_the_extension_is_installed(self):
+        # the extension is not there yet, so there is nothing to read the values from
+        self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", "--dock-radius", "20")
+        self.assertFalse(os.path.exists(f"{self.home.extensions}/{ACCENT}"))
+        self.apply("--gtk-theme")
+        self.assertEqual(self.setting("dock-radius"), "20")
+
+    def test_nothing_is_left_behind_by_uninstall(self):
+        self.apply("--dock-radius", "round")
         self.home.ok("uninstall")
-        self.assertFalse(os.path.exists(self.target))
-        self.assertFalse(os.path.exists(self.plain))
+        self.assertFalse(os.path.exists(f"{self.home.extensions}/{ACCENT}"))
+        self.assertEqual(self.setting_after_uninstall(), "dock")
 
-    def test_a_png_goes_in_a_sized_folder(self):
-        png = f"{self.home.home}/apps.png"
-        with open(png, "wb") as f:
-            f.write(b"\x89PNG")
-        self.apply("--show-apps-icon", png)
-        self.assertTrue(os.path.exists(
-            f"{self.home.data}/icons/hicolor/256x256/actions/view-app-grid-user-symbolic.png"))
-
-    def test_the_icon_of_the_flavor_in_use_is_chosen(self):
-        for flavor in ("latte", "mocha"):
-            with open(f"{self.home.home}/apps-{flavor}.svg", "w") as f:
-                f.write(f"<svg>{flavor}</svg>")
-        pattern = f"{self.home.home}/apps-{{flavor}}.svg"
-
-        # the light style is Latte
-        self.home.set_setting(INTERFACE, "color-scheme", "default")
-        self.apply("--flavor", "mocha", "--show-apps-icon", pattern)
-        self.assertEqual(self.home.read(self.target), "<svg>latte</svg>")
-        self.assertEqual(self.home.read(self.plain), "<svg>latte</svg>")
-
-        # the dark style is the flavor chosen
-        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
-        self.home.ok("apply")
-        self.assertEqual(self.home.read(self.target), "<svg>mocha</svg>")
-
-        # a flavor with no icon of its own leaves GNOME's, and says so
-        result = self.apply("--flavor", "frappe")
-        self.assertIn("was not found", result)
-        self.assertFalse(os.path.exists(self.target))
+    def setting_after_uninstall(self):
+        return self.home.settings(self.ACCENT_SCHEMA, "dock-radius")
 
     def test_an_icon_that_has_gone_does_not_stop_another_from_being_chosen(self):
-        self.apply("--show-apps-icon", self.icon)
-        os.remove(self.icon)
+        gone = f"{self.home.home}/gone.svg"
+        with open(gone, "w") as f:
+            f.write("<svg/>")
+        self.apply("--show-apps-icon", gone)
+        os.remove(gone)
+        # the preferences still name the file that is gone: configure goes on, and takes another
         other = f"{self.home.home}/other.svg"
         with open(other, "w") as f:
-            f.write("<svg>other</svg>")
-        # the preference still names the file that is gone: apply says so, and takes the icon it put away
-        result = self.home.ok("apply")
-        self.assertIn("was not found", result)
-        self.assertFalse(os.path.exists(self.target))
+            f.write("<svg/>")
         self.apply("--show-apps-icon", other)
-        self.assertEqual(self.home.read(self.target), "<svg>other</svg>")
-
-    def test_an_icon_that_is_not_ours_is_never_overwritten(self):
-        os.makedirs(os.path.dirname(self.target))
-        with open(self.target, "w") as f:
-            f.write("<svg>theirs</svg>")
-        self.apply("--show-apps-icon", self.icon)
-        self.assertEqual(self.home.read(self.target), "<svg>theirs</svg>")
-        self.assertFalse(os.path.exists(self.plain))   # nothing half done
-        self.apply("--show-apps-icon", "default")
-        self.assertEqual(self.home.read(self.target), "<svg>theirs</svg>")
+        self.assertEqual(self.setting("show-apps-icon"), other)

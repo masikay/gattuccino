@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from . import install, preferences as prefs, shell_theme, sources
+from . import install, live, preferences as prefs, shell_theme, sources
 from .desktop import Desktop
 
 ERRORS = (prefs.PreferenceError, install.InstallError, shell_theme.BuildError, sources.SourcesError)
@@ -32,6 +32,14 @@ def _add_preference_options(parser):
         else:
             parser.add_argument(_option(name), dest=name, default=None, metavar="VALUE",
                                 help=f"{spec.help} ({spec.values})")
+
+
+def load(desktop):
+    """The preferences as they are now: the file, with the values the extensions
+    have in their settings, which may have been changed since in their own windows."""
+    preferences = prefs.load(desktop.preferences_path)
+    live.pull(desktop, preferences)
+    return preferences
 
 
 def _show(preferences, desktop, out=print):
@@ -85,7 +93,7 @@ def _yes(question: str) -> bool:
 
 
 def _configure(args, desktop):
-    preferences = prefs.load(desktop.preferences_path)
+    preferences = load(desktop)
     given = {name: getattr(args, name) for name in prefs.SPECS if getattr(args, name) is not None}
 
     if given:
@@ -111,6 +119,8 @@ def _configure(args, desktop):
                                     "or run it in a terminal to be asked")
 
     prefs.save(preferences, desktop.preferences_path)
+    # The ones the extensions change while they run take effect now, apply or not
+    live.push(desktop, preferences)
     _show(preferences, desktop)
     if apply_now is None:
         print()
@@ -173,9 +183,9 @@ def main(argv=None) -> int:
         if args.command == "configure":
             _configure(args, desktop)
         elif args.command == "apply":
-            install.apply(prefs.load(desktop.preferences_path), desktop)
+            install.apply(load(desktop), desktop)
         elif args.command == "show":
-            _show(prefs.load(desktop.preferences_path), desktop)
+            _show(load(desktop), desktop)
         elif args.command == "build":
             _build(args, desktop)
         elif args.command == "uninstall":

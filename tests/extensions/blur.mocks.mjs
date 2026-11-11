@@ -273,7 +273,20 @@ export const Main = {
     layoutManager: null,
     overview: null,
 };
-export class Extension {}
+// The settings of the extension, changed while it runs
+export const prefs = Object.assign(new Emitter(), {
+    values: {},
+    get_int(key) { return this.values[key]; },
+    get_boolean(key) { return this.values[key]; },
+});
+export const resetPrefs = () => { prefs.values = {radius: 32, background: true, 'background-radius': 32}; };
+resetPrefs();
+/** Change a setting, and say so, as GSettings does */
+export function setPref(key, value) {
+    prefs.values[key] = value;
+    prefs.emit('changed', key);
+}
+export class Extension { getSettings() { return prefs; } }
 
 /** A desktop to blur: the UI group with a top bar and an overview in it. */
 export function desktop() {

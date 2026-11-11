@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.gattuccino-accent"
+          path="/org/gnome/shell/extensions/gattuccino-accent/">
+    <key name="dock-radius" type="s">
+      <default>'dock'</default>
+      <summary>Corner radius of the dock</summary>
+      <description>The corners of the dock of Dash to Dock: 'round' is as round as the floating top bar, a number is a radius in pixels, and 'dock' keeps the radius Dash to Dock draws.</description>
+    </key>
+    <key name="show-apps-icon" type="s">
+      <default>''</default>
+      <summary>Show Applications icon</summary>
+      <description>An .svg or .png file for the icon of the Show Applications button of the dock; {flavor} in the name stands for the flavor in use. Empty keeps the icon GNOME draws.</description>
+    </key>
+  </schema>
+</schemalist>

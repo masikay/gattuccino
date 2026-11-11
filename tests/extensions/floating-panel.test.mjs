@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
-import {Main, Meta, Window, pendingIdle, settle, state, workspace} from './floating-panel.mocks.mjs';
+import {Main, Meta, Window, pendingIdle, resetPrefs, setPref, settle, state, workspace} from './floating-panel.mocks.mjs';
 
 const FloatingPanel = await loadExtension('floating-panel@gattuccino', 'floating-panel.mocks.mjs');
 
@@ -34,6 +34,33 @@ test('floating panel', async t => {
         assert.equal(floating(), true);
         window.y = PANEL + 20; moved(actor);
         assert.equal(floating(), true);
+    });
+
+    // The gap and the corners are settings of the extension, changed while it runs
+    await t.test('puts the gap and the corners of its settings on the panel while it floats', () => {
+        assert.equal(Main.panel.style, 'margin: 6px 6px 0 6px; border-radius: 999px;');
+
+        setPref('gap', 10);
+        assert.deepEqual(margins(), [10, 10, 10]);
+        setPref('radius', '8');
+        assert.equal(Main.panel.style, 'margin: 10px 10px 0 10px; border-radius: 8px;');
+        resetPrefs();
+        setPref('gap', 6);
+    });
+
+    await t.test('leaves the panel to the theme while it is docked, and takes a setting up when it floats again', () => {
+        window.y = PANEL + 15; moved(actor);
+        assert.equal(floating(), false);
+        assert.equal(Main.panel.style, '');
+        setPref('gap', 12);                       // nothing to move while it is docked
+        assert.equal(Main.panel.margin_top, 0);
+        assert.equal(Main.panel.style, '');
+        window.y = 300; moved(actor);
+        assert.equal(floating(), true);
+        assert.equal(Main.panel.margin_top, 12);
+        Main.panel.finishEase?.();
+        resetPrefs();
+        setPref('gap', 6);
     });
 
     await t.test('docks when a window comes close, in one coalesced update', () => {

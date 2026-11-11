@@ -1,7 +1,7 @@
 {
   "uuid": "blur@gattuccino",
   "name": "Blur (Gattuccino)",
-  "description": "Companion to the Gattuccino shell theme. Blurs what is behind the translucent surfaces of the theme: the top bar, popup menus and the dock. What is blurred, and how much, is stated by the theme: with another theme this extension changes nothing.",
+  "description": "Companion to the Gattuccino shell theme. Blurs what is behind the translucent surfaces of the theme: the top bar, popup menus and the dock, and the wallpaper behind the overview and on the lock screen. How far, and whether the wallpaper is blurred, are settings of the extension, changed while it runs.",
   "shell-version": [
     "48",
     "49",
@@ -11,5 +11,6 @@
   "session-modes": [
     "user",
     "unlock-dialog"
-  ]
+  ],
+  "settings-schema": "org.gnome.shell.extensions.gattuccino-blur"
 }

@@ -12,11 +12,12 @@ import os
 import shutil
 import time
 
-from . import gtk_theme, palette, shell_theme, sources
+from . import gtk_theme, live, palette, shell_theme, sources
 from .desktop import INTERFACE_SCHEMA, USER_THEME_SCHEMA, USER_THEME_UUID, Desktop
-from .preferences import AUTO, ICON_FLAVOR, Preferences
+from .preferences import AUTO, Preferences
 
 # install.py is src/gattuccino/install.py: three levels up is the repo root.
+SCHEMAS_COMPILED = "gschemas.compiled"
 EXTENSIONS_SOURCE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "extensions")
 FLOATING_PANEL_UUID = "floating-panel@gattuccino"
@@ -179,10 +180,7 @@ def _install_shell_themes(desktop: Desktop, preferences: Preferences, version: s
         shutil.rmtree(f"{desktop.themes_dir}/{name}")
     for name, (flavor, accent, css) in themes.items():
         shell_theme.write_theme(f"{desktop.themes_dir}/{name}", css, flavor, accent, version,
-                                dock_accent=preferences.accent_selection,
-                                dock_radius=preferences.dock_radius,
-                                show_apps_icon=bool(preferences.show_apps_icon),
-                                show_apps_icon_file=_show_apps_icon_file(preferences, flavor))
+                                dock_accent=preferences.accent_selection)
 
     if schema_args is None:
         notes.append("The User Themes extension is not installed, so the shell theme is not in use yet. "
@@ -331,7 +329,8 @@ def _close_flatpak(desktop: Desktop, state):
 def _same_tree(a: str, b: str) -> bool:
     if not os.path.isdir(b):
         return False
-    comparison = filecmp.dircmp(a, b)
+    # What is compiled from the settings an extension brings is not part of it
+    comparison = filecmp.dircmp(a, b, ignore=[*filecmp.DEFAULT_IGNORES, SCHEMAS_COMPILED])
     if comparison.left_only or comparison.right_only or comparison.funny_files:
         return False
     _, mismatch, errors = filecmp.cmpfiles(a, b, comparison.common_files, shallow=False)
@@ -339,13 +338,19 @@ def _same_tree(a: str, b: str) -> bool:
         _same_tree(f"{a}/{name}", f"{b}/{name}") for name in comparison.common_dirs)
 
 
-def _install_extension(desktop: Desktop, uuid: str) -> bool:
+def _install_extension(desktop: Desktop, uuid: str, notes=None) -> bool:
     """Copy and enable an extension. Returns True if a new login is needed for it."""
     source, destination = f"{EXTENSIONS_SOURCE}/{uuid}", f"{desktop.extensions_dir}/{uuid}"
     changed = not _same_tree(source, destination)
     if changed:
         shutil.rmtree(destination, ignore_errors=True)
         shutil.copytree(source, destination)
+    # The settings of the extension have to be compiled before it can read them
+    schemas = f"{destination}/schemas"
+    if os.path.isdir(schemas) and not os.path.exists(f"{schemas}/{SCHEMAS_COMPILED}"):
+        if not desktop.compile_schemas(schemas) and notes is not None:
+            notes.append(f"glib-compile-schemas was not found or failed, so the extension {uuid} cannot "
+                         "read its settings and will not start. It is part of glib2 (glib2-devel on some systems).")
     # GNOME Shell keeps running the code it loaded at login
     return desktop.enable_extension(uuid) or changed
 
@@ -359,30 +364,9 @@ def _remove_extension(desktop: Desktop, uuid: str):
 
 # --- The Show Applications icon of the dock -----------------------------------
 
-# The name Dash to Dock asks the icon theme for, in a user session. Icon themes
-# do not have it, and it falls back to the icon GNOME draws, so a file of this
-# name in the user's icon folder is used instead.
-SHOW_APPS_ICON = "view-app-grid-user-symbolic"
-
-
-def _show_apps_icon_file(preferences: Preferences, flavor: str):
-    """The icon of a flavor, if there is one: the file of the preference, or the
-    one of the name with {flavor} replaced."""
-    if not preferences.show_apps_icon:
-        return None
-    path = preferences.show_apps_icon.replace(ICON_FLAVOR, flavor)
-    return path if os.path.isfile(path) else None
-
-
-def _show_apps_icon_targets(desktop: Desktop, source: str):
-    """The icon under the name that is asked for, and under the same name
-    without -symbolic, which is what is looked up when the icon is drawn as it
-    is and not in the color of the text (see shell_theme.dock_icon_css)."""
-    folder, extension = (("256x256", "png") if source.lower().endswith(".png") else ("scalable", "svg"))
-    return [f"{desktop.icons_dir}/hicolor/{folder}/actions/{name}.{extension}"
-            for name in (SHOW_APPS_ICON, SHOW_APPS_ICON.removesuffix("-symbolic"))]
-
-
+# An earlier version put the icon in the icon folder, where the Shell only saw it
+# after a login. The extension puts it on the button of the dock itself now, as
+# its settings say, so what was put there is taken away.
 def _remove_show_apps_icon(desktop: Desktop, state) -> bool:
     removed = False
     for path in state["icons"]:
@@ -393,35 +377,6 @@ def _remove_show_apps_icon(desktop: Desktop, state) -> bool:
     if removed:
         desktop.update_icon_cache(f"{desktop.icons_dir}/hicolor")
     return removed
-
-
-def _install_show_apps_icon(desktop: Desktop, preferences: Preferences, state, notes) -> bool:
-    """Put the icon in place, or take the one put there before away. Says
-    whether the icons changed, which GNOME Shell only notices after a login."""
-    # With {flavor} in the name, the icon of the flavor in use
-    source = (preferences.show_apps_icon.replace(ICON_FLAVOR, current_flavor(preferences, desktop))
-              if preferences.show_apps_icon else None)
-    # This is the icon the dock has from the icon folder, for the flavor in use;
-    # the extension puts the one of the theme on it as the theme changes
-    targets = _show_apps_icon_targets(desktop, source) if source else []
-    changed = _remove_show_apps_icon(desktop, state)
-    if targets and not os.path.isfile(source):
-        notes.append(f"The icon {source} was not found, so the Show Applications icon is the one GNOME draws. "
-                     "Choose another with --show-apps-icon.")
-        return changed
-    if not targets:
-        return changed
-    for target in targets:
-        if os.path.lexists(target):
-            notes.append(f"{target} is not from gattuccino, so it is left as it is and the Show Applications "
-                         "icon is not changed.")
-            _remove_show_apps_icon(desktop, state)
-            return changed
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copyfile(source, target)
-        state["icons"].append(target)
-    desktop.update_icon_cache(f"{desktop.icons_dir}/hicolor")
-    return True
 
 
 # --- Apply and uninstall -----------------------------------------------------
@@ -460,10 +415,7 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
     else:
         _close_flatpak(desktop, state)
 
-    icon_changed = _install_show_apps_icon(desktop, preferences, state, notes)
-    if preferences.show_apps_icon and icon_changed:
-        log(f"Installed the Show Applications icon {preferences.show_apps_icon}")
-    relogin |= icon_changed
+    relogin |= _remove_show_apps_icon(desktop, state)
 
     wanted = {
         FLOATING_PANEL_UUID: preferences.shell_theme and preferences.floating_panel,
@@ -474,10 +426,12 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
     }
     for uuid, want in wanted.items():
         if want:
-            relogin |= _install_extension(desktop, uuid)
+            relogin |= _install_extension(desktop, uuid, notes)
             log(f"Installed the extension {uuid}")
         else:
             _remove_extension(desktop, uuid)
+    # Into the settings of the extensions, where they take them at once
+    live.push(desktop, preferences)
     # Clean up what an earlier version, under this project's old name, installed
     for uuid in (LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
@@ -499,7 +453,8 @@ def uninstall(desktop: Desktop, log=print):
     _restore(desktop, state, "gtk-theme")
     _close_flatpak(desktop, state)
     _remove_show_apps_icon(desktop, state)
-    for uuid in (FLOATING_PANEL_UUID, ACCENT_UUID, LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
+    live.reset(desktop)
+    for uuid in (FLOATING_PANEL_UUID, ACCENT_UUID, BLUR_UUID, LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
     for path in (desktop.state_path,):
         if os.path.exists(path):

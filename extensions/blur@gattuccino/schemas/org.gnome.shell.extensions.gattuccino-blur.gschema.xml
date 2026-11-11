@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.gattuccino-blur"
+          path="/org/gnome/shell/extensions/gattuccino-blur/">
+    <key name="radius" type="i">
+      <range min="0" max="100"/>
+      <default>32</default>
+      <summary>Blur radius</summary>
+      <description>How far the blur behind the top bar, popup menus and the dock reaches, in pixels. 0 turns it off.</description>
+    </key>
+    <key name="background" type="b">
+      <default>true</default>
+      <summary>Blur the wallpaper</summary>
+      <description>Blur the wallpaper behind the overview and on the lock screen.</description>
+    </key>
+    <key name="background-radius" type="i">
+      <range min="0" max="100"/>
+      <default>32</default>
+      <summary>Wallpaper blur radius</summary>
+      <description>How far the blur of the wallpaper behind the overview and on the lock screen reaches, in pixels.</description>
+    </key>
+  </schema>
+</schemalist>

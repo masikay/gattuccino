@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import {loadExtension} from './load.mjs';
 import {
     USER_THEME_DIR, dock, environment, files, handlerCount, loadCalls, loaded, pendingIdle, pickAccent,
-    pickStyle, replaceTheme, resetLoadCalls, settle,
+    pickStyle, replaceTheme, resetLoadCalls, resetPrefs, setPref, settle,
     settings, switchTheme, written,
 } from './catppuccin-accent.mocks.mjs';
 
@@ -215,36 +215,75 @@ test('catppuccin accent', async t => {
         files.delete(lockSheet('gattuccino-mocha-teal'));
     });
 
-    // The icon of the theme goes on the button of the dock as the theme is
-    // switched, which is how it follows the style: the Shell has read the icons
-    // by then, so one put in the icon folder would show after the next login
-    await t.test('puts the icon of the theme on the Show Applications button of the dock', () => {
-        const iconOf = name => `/home/u/.themes/${name}/gnome-shell/show-apps-icon.svg`;
-        files.set(iconOf('gattuccino-mocha-teal'), '<svg/>');
-        files.set(iconOf('gattuccino-latte-teal'), '<svg/>');
+    // The dock is dressed from the settings of the extension, as they are
+    // changed while it runs
+    await t.test('puts the icon of the flavor in use on the Show Applications button', () => {
+        const art = flavor => `/home/u/art/apps-${flavor}.svg`;
+        files.set(art('mocha'), '<svg/>');
+        files.set(art('latte'), '<svg/>');
         const {icon, bin, makeIcon} = dock();
 
         switchTheme('gattuccino-mocha-teal');
+        setPref('show-apps-icon', '/home/u/art/apps-{flavor}.svg');
         settle();
-        assert.equal(icon().gicon.get_file().get_path(), iconOf('gattuccino-mocha-teal'));
+        assert.equal(icon().gicon.get_file().get_path(), art('mocha'));
+        // drawn as it is, and not in the color of the text
+        assert.equal(icon().style, '-st-icon-style: regular;');
 
         // the style is switched: another theme, and with it another icon
         switchTheme('gattuccino-latte-teal');
         settle();
-        assert.equal(icon().gicon.get_file().get_path(), iconOf('gattuccino-latte-teal'));
+        assert.equal(icon().gicon.get_file().get_path(), art('latte'));
 
         // the dock makes the button again, for another size of icon
         bin.replaceChild(makeIcon());
         assert.equal(icon().gicon, null);
         settle();
-        assert.equal(icon().gicon.get_file().get_path(), iconOf('gattuccino-latte-teal'));
+        assert.equal(icon().gicon.get_file().get_path(), art('latte'));
 
-        // a theme with no icon of its own puts the dock's own back
-        files.delete(iconOf('gattuccino-latte-teal'));
-        files.delete(iconOf('gattuccino-mocha-teal'));
-        switchTheme('gattuccino-mocha-teal');
+        // another file, set while it runs
+        files.set('/home/u/art/other.png', '');
+        setPref('show-apps-icon', '/home/u/art/other.png');
+        settle();
+        assert.equal(icon().gicon.get_file().get_path(), '/home/u/art/other.png');
+
+        // a flavor with no icon of its own, or none set at all: the dock's own
+        setPref('show-apps-icon', '/home/u/art/missing-{flavor}.svg');
         settle();
         assert.equal(icon().icon_name, 'view-app-grid-user-symbolic');
+        assert.equal(icon().style, '');
+        setPref('show-apps-icon', '');
+    });
+
+    await t.test('gives the dock the corners the settings say, and the room that goes with them', () => {
+        const {background, container, restyle} = dock();
+        setPref('dock-radius', 'round');
+        settle();
+        assert.equal(background.style, 'border-radius: 999px; padding-left: 15px; padding-right: 15px;');
+
+        // a number of pixels draws a shallower curve, and needs less room
+        setPref('dock-radius', '12');
+        settle();
+        assert.equal(background.style, 'border-radius: 12px; padding-left: 6px; padding-right: 6px;');
+
+        // a dock on the side has its room above and below
+        restyle('left');
+        settle();
+        assert.equal(background.style, 'border-radius: 12px; padding-top: 6px; padding-bottom: 6px;');
+
+        // extended over the whole edge it is a panel, and stays square
+        restyle('bottom extended');
+        settle();
+        assert.equal(background.style, '');
+
+        // and the setting that leaves Dash to Dock's own puts back what was there
+        restyle('bottom');
+        settle();
+        assert.notEqual(background.style, '');
+        setPref('dock-radius', 'dock');
+        settle();
+        assert.equal(background.style, '');
+        assert.ok(container);
     });
 
     await t.test('loads the accent rules for the dock that come with the theme', () => {

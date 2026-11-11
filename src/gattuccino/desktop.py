@@ -83,6 +83,10 @@ class Desktop:
             return ("--schemadir", schemas)
         return None
 
+    def compile_schemas(self, directory: str) -> bool:
+        """Compile the settings an extension brings along, which it cannot be asked for before."""
+        return self.run("glib-compile-schemas", directory).returncode == 0
+
     # --- Extensions -------------------------------------------------------
 
     def enable_extension(self, uuid: str) -> bool:

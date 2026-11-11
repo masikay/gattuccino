@@ -128,14 +128,20 @@ uiGroup.add_child = function (child) {
     emitSignal(this, 'child-added');
 };
 /** The dock: a container with a bin in it that holds a button's icon */
-export function dock() {
-    const container = new Actor({name: 'dashtodockContainer'});
+export function dock(edge = 'bottom') {
+    const container = new Actor({name: 'dashtodockContainer', style_class: edge});
+    const background = new Actor({style_class: 'dash-background', style: ''});
     const bin = new Actor();
-    const makeIcon = () => new Actor({style_class: 'show-apps-icon', icon_name: 'view-app-grid-user-symbolic', gicon: null});
+    const makeIcon = () => new Actor({
+        style_class: 'show-apps-icon', icon_name: 'view-app-grid-user-symbolic', gicon: null, style: '',
+    });
+    container.add_child(background);
     container.add_child(bin);
     bin.add_child(makeIcon());
     uiGroup.add_child(container);
-    return {container, bin, makeIcon, icon: () => bin.children[0]};
+    // What Dash to Dock does when it is extended over the whole edge, or moved
+    const restyle = classes => { container.style_class = classes; emitSignal(container, 'style-changed'); };
+    return {container, background, bin, makeIcon, icon: () => bin.children[0], restyle};
 }
 
 export const Main = {
@@ -145,7 +151,27 @@ export const Main = {
             ? {dir: new File(USER_THEME_DIR)} : undefined,
     },
 };
-export class Extension { get uuid() { return 'catppuccin-accent@gattuccino'; } }
+// The settings of the extension, changed while it runs
+export const prefs = {
+    values: {},
+    get_string(key) { return this.values[key]; },
+    connect(signal, callback) {
+        const id = ++handlerNext;
+        handlers.set(id, [prefs, signal, callback]);
+        return id;
+    },
+    disconnect(id) { if (!handlers.delete(id)) throw new Error('unknown handler'); },
+};
+export const resetPrefs = () => { prefs.values = {'dock-radius': 'dock', 'show-apps-icon': ''}; };
+resetPrefs();
+export function setPref(key, value) {
+    prefs.values[key] = value;
+    emitSignal(prefs, 'changed');
+}
+export class Extension {
+    get uuid() { return 'catppuccin-accent@gattuccino'; }
+    getSettings() { return prefs; }
+}
 
 // The St theme: GNOME Shell makes a new one whenever the shell theme changes,
 // which drops the stylesheets that were loaded into it.

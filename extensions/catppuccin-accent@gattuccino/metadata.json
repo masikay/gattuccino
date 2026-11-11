@@ -1,7 +1,7 @@
 {
   "uuid": "catppuccin-accent@gattuccino",
   "name": "Catppuccin Accent and Style (Gattuccino)",
-  "description": "Makes the style and the accent color picked in Settings > Appearance apply as their Catppuccin counterparts: Latte for the light style, the chosen dark flavor for the dark one. Switches the Gattuccino shell theme to the variant built for that flavor and accent, rewrites gtk.css and gattuccino-accent.css in ~/.config/gtk-4.0 and gtk-3.0 for applications, and loads the accent rules for the dock of Dash to Dock that come with the theme. Does nothing to themes and files that are not part of Gattuccino.",
+  "description": "Makes the style and the accent color picked in Settings > Appearance apply as their Catppuccin counterparts: Latte for the light style, the chosen dark flavor for the dark one. Switches the Gattuccino shell theme to the variant built for that flavor and accent, rewrites gtk.css and gattuccino-accent.css in ~/.config/gtk-4.0 and gtk-3.0 for applications, and loads the accent rules for the dock of Dash to Dock that come with the theme. Does nothing to themes and files that are not part of Gattuccino. It also gives the dock of Dash to Dock the corners and the Show Applications icon its settings say, while it runs.",
   "shell-version": [
     "48",
     "49",
@@ -11,5 +11,6 @@
   "session-modes": [
     "user",
     "unlock-dialog"
-  ]
+  ],
+  "settings-schema": "org.gnome.shell.extensions.gattuccino-accent"
 }

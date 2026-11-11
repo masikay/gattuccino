@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.gattuccino-floating-panel"
+          path="/org/gnome/shell/extensions/gattuccino-floating-panel/">
+    <key name="gap" type="i">
+      <range min="0" max="12"/>
+      <default>6</default>
+      <summary>Gap around the floating bar</summary>
+      <description>The gap around the top bar while it floats, in pixels.</description>
+    </key>
+    <key name="radius" type="s">
+      <default>'round'</default>
+      <summary>Corner radius of the floating bar</summary>
+      <description>How round the floating top bar is: 'round' for a pill, or a radius in pixels.</description>
+    </key>
+  </schema>
+</schemalist>

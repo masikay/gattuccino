@@ -18,9 +18,10 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 //   and switches GTK 3 between adw-gtk3 and adw-gtk3-dark;
 // - the dock of Dash to Dock: loads gattuccino-dock.css, the accent
 //   rules the theme in use was built with, if it has them;
-// - the Show Applications icon of the dock: puts the icon the theme carries,
-//   show-apps-icon.svg or .png, on the dock, so that it is the icon of the
-//   flavor in use as the style, and so the theme, is switched;
+// - the dock of Dash to Dock, as its own settings say while this runs
+//   (dock-radius, and show-apps-icon, in which {flavor} stands for the flavor
+//   in use): the corners of the dock, and the icon of its Show Applications
+//   button, which follows the style as the theme is switched;
 // - the lock screen: the same for gattuccino-lock.css. The Shell runs the
 //   lock screen with its own stylesheet and not the theme's, so the accent
 //   there is a stylesheet of an extension too, which this one keeps loaded
@@ -87,9 +88,10 @@ const USER_THEME_SCHEMA = 'org.gnome.shell.extensions.user-theme';
 const DOCK_STYLESHEET = 'gattuccino-dock.css';
 const LOCK_STYLESHEET = 'gattuccino-lock.css';
 const ACCENT_STYLESHEETS = [DOCK_STYLESHEET, LOCK_STYLESHEET];
-const DOCK_ICON_FILES = ['show-apps-icon.svg', 'show-apps-icon.png'];
+const FLAVOR_OF_THEME = /^gattuccino-(latte|frappe|macchiato|mocha)-/;
 const DOCK_CONTAINER = 'dashtodockContainer';
 const SHOW_APPS_ICON_CLASS = 'show-apps-icon';
+const DASH_BACKGROUND_CLASS = 'dash-background';
 
 // Same places the User Themes extension loads shell themes from
 function themeDirs() {
@@ -161,9 +163,12 @@ export default class CatppuccinAccentExtension extends Extension {
         this._userThemeSettings = this._getUserThemeSettings();
         this._dockStylesheet = null;
         this._dockIdleId = 0;
-        this._dockIcon = null;          // the file of the icon of the theme in use, if it has one
+        // The settings of the dock, changed while this runs
+        this._prefs = this.getSettings();
+        this._prefsId = this._prefs.connect('changed', () => this._queueIcons());
         this._dressed = new Map();      // St.Icon -> what it was before
-        this._iconBins = new Map();     // what holds them -> the ids of what is heard from it
+        this._shaped = new Map();       // the background of a dock -> the style it had
+        this._watched = new Map();      // what is heard from -> the ids of what is heard
         this._iconIdleId = 0;
         this._uiGroupId = 0;
         // A dock that comes and goes, and one that is made again
@@ -201,6 +206,9 @@ export default class CatppuccinAccentExtension extends Extension {
         }
         this._unloadDock();
         this._unloadDockIcon();
+        this._prefs.disconnect(this._prefsId);
+        this._prefsId = 0;
+        this._prefs = null;
         this._themeContext = null;
         this._interfaceSettings = null;
         this._userThemeSettings = null;
@@ -308,9 +316,8 @@ export default class CatppuccinAccentExtension extends Extension {
     _syncDock() {
         const theme = this._themeContext?.get_theme();
         const name = this._userThemeSettings?.get_string('name');
-        this._setDockIcon(name?.match(VARIANT_NAME)
-            ? DOCK_ICON_FILES.map(basename => this._themeFile(name, basename)).find(file => file) ?? null
-            : null);
+        // A theme that is not ours, or another flavor: the icon of its own
+        this._queueIcons();
         const files = name?.match(VARIANT_NAME)
             ? ACCENT_STYLESHEETS.map(basename => this._themeFile(name, basename)).filter(file => file)
             : [];
@@ -349,72 +356,147 @@ export default class CatppuccinAccentExtension extends Extension {
         }
     }
 
-    // The icon of the theme in use goes on the Show Applications button of the
-    // dock, and comes off again when the theme has none. It is put on the
-    // button itself and not into the icon folder: the Shell has read the icons
-    // by then, and a new one would show only after the next login.
-    _setDockIcon(file) {
-        if (this._dockIcon === file || (file && this._dockIcon?.equal(file)))
-            return;
-        this._dockIcon = file;
-        this._queueIcons();
-    }
-
+    // The dock is dressed from its own settings: the icon of the Show
+    // Applications button, and the corners of the background. It is done on
+    // the actors, and not with a stylesheet or the icon folder, so that a
+    // change of the settings is seen at once: the Shell has read the icons by
+    // then, and a stylesheet outranks what is set on an actor only by being
+    // !important, which would leave the settings nothing to say.
     _queueIcons() {
         if (this._iconIdleId)
             return;
         this._iconIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
             this._iconIdleId = 0;
-            this._dressIcons();
+            this._dressDock();
             return GLib.SOURCE_REMOVE;
         });
     }
 
-    // The buttons are made again whenever the dock changes the size of its
-    // icons, and each time they come without the icon: it is heard from the
-    // actor that holds them.
-    _dressIcons() {
-        const found = this._findShowAppsIcons();
-        if (this._dockIcon) {
-            for (const icon of found)
-                this._dressIcon(icon, this._dockIcon);
-            // The ones that were made again are gone, and need nothing put back
-            for (const icon of [...this._dressed.keys()]) {
-                if (!found.includes(icon))
-                    this._dressed.delete(icon);
-            }
-            return;
-        }
-
-        // The theme has no icon: what was dressed is put back
-        for (const [icon, before] of this._dressed)
-            this._restoreIcon(icon, before);
-        this._dressed.clear();
+    // The icon file of the flavor in use, if the settings name one that is there
+    _iconFile() {
+        const pattern = this._prefs.get_string('show-apps-icon');
+        if (!pattern)
+            return null;
+        const name = this._userThemeSettings?.get_string('name') ?? '';
+        const flavor = name.match(FLAVOR_OF_THEME)?.[1] ?? 'mocha';
+        const file = Gio.File.new_for_path(pattern.replace('{flavor}', flavor));
+        return file.query_exists(null) ? file : null;
     }
 
-    _findShowAppsIcons() {
-        const found = [];
-        const uiGroup = Main.layoutManager?.uiGroup;
-        const stack = (uiGroup?.get_children() ?? []).filter(actor => actor.name === DOCK_CONTAINER);
-        while (stack.length) {
-            const actor = stack.pop();
-            if (actor.has_style_class_name?.(SHOW_APPS_ICON_CLASS))
-                found.push(actor);
-            stack.push(...actor.get_children());
+    // The corners of the background of a dock, and the room at its ends that
+    // the first and the last icon need to clear the curve: an icon tile in a
+    // pill about 60px tall needs some 12px at each end, and a little more to
+    // breathe. The curve a number of pixels draws is shallower, and needs less.
+    // Nothing for a dock that is extended over the whole edge, which is a
+    // panel and stays square, or when the setting leaves Dash to Dock's own.
+    _shapeStyle(container) {
+        const setting = this._prefs.get_string('dock-radius');
+        if (setting === 'dock' || container.has_style_class_name?.('extended'))
+            return null;
+        const radius = setting === 'round' ? 999 : parseInt(setting, 10);
+        if (!Number.isFinite(radius))
+            return null;
+        const pad = setting === 'round' ? 15 : Math.floor((Math.min(radius, 30) + 1) / 2);
+        const vertical = ['left', 'right'].some(edge => container.has_style_class_name?.(edge));
+        const [a, b] = vertical ? ['top', 'bottom'] : ['left', 'right'];
+        return `border-radius: ${radius}px; padding-${a}: ${pad}px; padding-${b}: ${pad}px;`;
+    }
+
+    // The buttons are made again whenever the dock changes the size of its
+    // icons, and each time they come without the icon: it is heard from the
+    // actor that holds them. A dock that changes its edge or is extended is
+    // heard from too.
+    _dressDock() {
+        const docks = this._findDocks();
+        const file = this._iconFile();
+        const icons = docks.flatMap(dock => dock.icons);
+
+        if (file) {
+            for (const icon of icons)
+                this._dressIcon(icon, file);
+            // The ones that were made again are gone, and need nothing put back
+            for (const icon of [...this._dressed.keys()]) {
+                if (!icons.includes(icon))
+                    this._dressed.delete(icon);
+            }
+        } else {
+            for (const [icon, before] of this._dressed)
+                this._restoreIcon(icon, before);
+            this._dressed.clear();
         }
-        return found;
+
+        const backgrounds = [];
+        for (const {container, backgrounds: found} of docks) {
+            this._watch(container, 'style-changed');
+            const style = this._shapeStyle(container);
+            for (const background of found) {
+                backgrounds.push(background);
+                if (style)
+                    this._shape(background, style);
+                else
+                    this._unshape(background);
+            }
+        }
+        for (const background of [...this._shaped.keys()]) {
+            if (!backgrounds.includes(background))
+                this._shaped.delete(background);
+        }
+    }
+
+    _findDocks() {
+        const docks = [];
+        const uiGroup = Main.layoutManager?.uiGroup;
+        for (const container of (uiGroup?.get_children() ?? []).filter(actor => actor.name === DOCK_CONTAINER)) {
+            const dock = {container, icons: [], backgrounds: []};
+            const stack = [container];
+            while (stack.length) {
+                const actor = stack.pop();
+                if (actor.has_style_class_name?.(SHOW_APPS_ICON_CLASS))
+                    dock.icons.push(actor);
+                if (actor.has_style_class_name?.(DASH_BACKGROUND_CLASS))
+                    dock.backgrounds.push(actor);
+                stack.push(...actor.get_children());
+            }
+            docks.push(dock);
+        }
+        return docks;
+    }
+
+    // Heard from once, whatever number of times it is asked for
+    _watch(actor, ...signals) {
+        if (this._watched.has(actor))
+            return;
+        const ids = signals.map(signal => actor.connect(signal, () => this._queueIcons()));
+        ids.push(actor.connect('destroy', () => this._watched.delete(actor)));
+        this._watched.set(actor, ids);
+    }
+
+    _shape(background, style) {
+        if (!this._shaped.has(background))
+            this._shaped.set(background, background.style ?? '');
+        if (background.style !== style)
+            background.style = style;
+    }
+
+    _unshape(background) {
+        if (!this._shaped.has(background))
+            return;
+        background.style = this._shaped.get(background);
+        this._shaped.delete(background);
     }
 
     _dressIcon(icon, file) {
+        // Heard from the actor that holds it, which keeps the same icon only
+        // until the dock makes it again
         const parent = icon.get_parent();
-        if (parent && !this._iconBins.has(parent)) {
-            this._iconBins.set(parent, [
-                parent.connect('notify::child', () => this._queueIcons()),
-                parent.connect('destroy', () => this._iconBins.delete(parent)),
-            ]);
-        }
+        if (parent)
+            this._watch(parent, 'notify::child');
         if (!this._dressed.has(icon))
-            this._dressed.set(icon, {name: icon.icon_name, gicon: icon.gicon});
+            this._dressed.set(icon, {name: icon.icon_name, gicon: icon.gicon, style: icon.style ?? ''});
+        // A name ending in -symbolic is taken to mean a one-color icon, which
+        // the Shell paints in the color of the text; this is a picture
+        if (icon.style !== '-st-icon-style: regular;')
+            icon.style = '-st-icon-style: regular;';
         if (icon.gicon?.get_file?.().equal(file))
             return;
         icon.gicon = new Gio.FileIcon({file});
@@ -422,6 +504,7 @@ export default class CatppuccinAccentExtension extends Extension {
 
     _restoreIcon(icon, before) {
         try {
+            icon.style = before.style;
             if (before.name)
                 icon.icon_name = before.name;
             else
@@ -439,20 +522,27 @@ export default class CatppuccinAccentExtension extends Extension {
         if (this._uiGroupId)
             Main.layoutManager.uiGroup.disconnect(this._uiGroupId);
         this._uiGroupId = 0;
-        for (const [bin, ids] of this._iconBins) {
+        for (const [actor, ids] of this._watched) {
             for (const id of ids) {
                 try {
-                    bin.disconnect(id);
+                    actor.disconnect(id);
                 } catch (e) {
                     // gone with the dock
                 }
             }
         }
-        this._iconBins.clear();
-        this._dockIcon = null;
+        this._watched.clear();
         for (const [icon, before] of this._dressed)
             this._restoreIcon(icon, before);
         this._dressed.clear();
+        for (const [background, style] of this._shaped) {
+            try {
+                background.style = style;
+            } catch (e) {
+                // gone with the dock
+            }
+        }
+        this._shaped.clear();
     }
 
     _syncGtk(picked, dark) {

@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
-import {Actor, Main, Shell, backdropsIn, desktop, gsettings, idle, menu, sizes, settle, state, themeContext} from './blur.mocks.mjs';
+import {Actor, Main, Shell, setPref, resetPrefs, backdropsIn, desktop, gsettings, idle, menu, sizes, settle, state, themeContext} from './blur.mocks.mjs';
 
 const Blur = await loadExtension('blur@gattuccino', 'blur.mocks.mjs');
 
 const THEME = {radius: 32, brightness: 1, alpha: 204, corners: [16, 16, 16, 16], border: 0};
-const reset = () => { state.theme = {...THEME}; };
+const reset = () => { state.theme = {...THEME}; resetPrefs(); };
 
 /** The blur shows and hides itself by its opacity, never by hiding the actor:
  * an actor that has just been shown has no allocation, and Clutter then cannot
@@ -125,24 +125,27 @@ test('the top bar', async t => {
     });
 
     // The theme is reloaded whole when the style or the accent changes, and
-    // carries none of these properties while it is between the two.
+    // for a moment has no background for the bar.
     await t.test('comes back after the theme has been reloaded', () => {
-        state.theme = {...THEME, radius: null};
+        state.theme = {...THEME, alpha: 255};
         panel.emit('style-changed');
         assert.equal(shown(backdrop), false);
 
-        reset();                       // the new theme is in place, unsaid
+        reset();                       // the new theme is in place
         themeContext.emit('changed');
         settle();
         assert.equal(shown(backdrop), true);
     });
 
-    await t.test('does nothing at all with a theme that does not ask for it', () => {
-        state.theme = {...THEME, radius: null};
-        panel.emit('style-changed');
+    // How far to blur is a setting of the extension, changed while it runs
+    await t.test('takes a radius set while it runs, and goes away at 0', () => {
+        setPref('radius', 12);
+        assert.equal(backdrop.get_effect('blur').radius, 12);
+        assert.equal(shown(backdrop), true);
+        setPref('radius', 0);
         assert.equal(shown(backdrop), false);
-        reset();
-        panel.emit('style-changed');
+        setPref('radius', 32);
+        assert.equal(backdrop.get_effect('blur').radius, 32);
         assert.equal(shown(backdrop), true);
     });
 
@@ -337,11 +340,24 @@ test('the overview', async t => {
         assert.equal(wallpapers()[0].opacity, 0);
     });
 
-    await t.test('is not shown when the theme does not ask for a blur', () => {
-        state.theme = {...THEME, radius: null};
+    await t.test('takes the radius and the switch of the background as they are set', () => {
         open();
+        setPref('background-radius', 10);
+        assert.equal(wallpapers()[0].opacity, 255);
+        assert.equal(wallpapers()[0].get_effect('blur').radius, 10);
+        setPref('background', false);
+        assert.equal(wallpapers()[0].opacity, 0);
+        setPref('background', true);
+        assert.equal(wallpapers()[0].opacity, 255);
+        setPref('background-radius', 0);
         assert.equal(wallpapers()[0].opacity, 0);
         Main.overview.emit('hidden');
+        reset();
+    });
+
+    await t.test('is not touched by a setting changed while it is closed', () => {
+        setPref('background-radius', 20);
+        assert.equal(wallpapers()[0].opacity, 0);
         reset();
     });
 
@@ -436,28 +452,27 @@ test('the lock screen', async t => {
         assert.equal(widget.get_effect('blur').brightness, 0.65);
     });
 
-    await t.test('is left as the Shell makes it when the theme does not ask for a blur', () => {
-        state.theme = {...THEME, radius: null};
-        themeContext.emit('changed');
+    await t.test('is left as the Shell makes it with the background blur off', () => {
+        setPref('background', false);
         const dialog = lock();
         const [widget] = dialog._backgroundGroup.get_children();
         assert.ok(!widget.style);
         assert.equal(widget.get_effect('blur').radius, 90);
         assert.notEqual(widget.get_children()[0].visible, false);
         reset();
-        themeContext.emit('changed');
     });
 
-    // The lock screen runs with GNOME's own stylesheet, which says nothing of
-    // the blur: what the theme asked for is what it asked for at the desktop
-    await t.test('goes by what the theme asked for before the screen was locked', () => {
+    // The lock screen runs with GNOME's own stylesheet, which carries nothing of
+    // this theme: the radius is a setting of the extension, there as always
+    await t.test('goes by the radius set, as it is changed while locked', () => {
         Main.sessionMode = {isLocked: true};
-        state.theme = {...THEME, radius: null};
-        themeContext.emit('changed');
+        setPref('background-radius', 20);
         const dialog = lock();
         const [widget] = dialog._backgroundGroup.get_children();
-        assert.equal(widget.get_effect('blur').radius, 32);
+        assert.equal(widget.get_effect('blur').radius, 20);
         assert.match(widget.style, /wall.jpg/);
+        setPref('background-radius', 40);
+        assert.equal(widget.get_effect('blur').radius, 40);
         delete Main.sessionMode;
         reset();
     });

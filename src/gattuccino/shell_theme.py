@@ -602,90 +602,13 @@ def lock_accent_css(flavor: str, accent: str) -> str:
 """
 
 
-# --- The shape of the dock of Dash to Dock -------------------------------
-
-def dock_shape_css(radius) -> str:
-    """The corner radius of the dock: 'round' is as round as the floating top
-    bar, a number is in pixels.
-
-    Dash to Dock states a radius of its own (24px, 18px when it shrinks, none
-    when it is extended over the whole edge), in a stylesheet that outranks any
-    theme: so this comes from the extension stylesheet too, where !important is
-    what gets ahead of it. A dock extended over the whole edge keeps its
-    square corners.
-    """
-    value = "999px" if radius == "round" else f"{radius}px"
-
-    # The first and the last icon sit in the curve of the ends, and Dash to Dock
-    # leaves no padding there: an icon tile in a pill about 60px tall needs
-    # some 12px at each end to clear the curve, and a little more to breathe.
-    # The curve a number of pixels draws is shallower, and needs less.
-    pad = 15 if radius == "round" else (min(int(radius), 30) + 1) // 2
-    along = {
-        "bottom": ("left", "right"), "top": ("left", "right"),
-        "left": ("top", "bottom"), "right": ("top", "bottom"),
-    }
-    space = "".join(f"""
-#dashtodockContainer.{edge} #dash .dash-background {{
-  padding-{a}: {pad}px !important;
-  padding-{b}: {pad}px !important;
-}}
-""" for edge, (a, b) in along.items())
-
-    return f"""/* gattuccino: shape of the dock (radius={radius}) */
-#dashtodockContainer #dash .dash-background {{
-  border-radius: {value} !important;
-}}
-{space}
-/* extended over the whole edge, it is a panel and stays square */
-#dashtodockContainer.extended #dash .dash-background {{
-  border-radius: 0 !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-}}
-"""
-
-
-def dock_icon_css() -> str:
-    """Draw the Show Applications icon as the file is, in its own colors.
-
-    The icon is asked for by a name ending in -symbolic, and the Shell takes
-    that to mean a one-color icon and paints it in the color of the text. This
-    says to draw it as it is instead. It is only written for a custom icon:
-    GNOME's own is a symbolic one and wants the text color.
-    """
-    return """/* gattuccino: the Show Applications icon, in the colors of its file */
-#dashtodockContainer #dash .show-apps-icon,
-#dashtodockContainer #dash .show-apps StIcon {
-  -st-icon-style: regular !important;
-}
-"""
-
-
-# The Show Applications icon of a theme, which is the icon of its flavor: the
-# Catppuccin Accent extension puts it on the dock whenever the theme is
-# selected, so the icon follows the style as the theme does.
-DOCK_ICON = "show-apps-icon"
-
-
 def write_theme(directory: str, css: str, flavor: str, accent: str, shell_version: str,
-                dock_accent: bool = False, dock_radius=None, show_apps_icon: bool = False,
-                show_apps_icon_file: Optional[str] = None):
+                dock_accent: bool = False):
     """Write a theme folder the User Themes extension can load."""
     os.makedirs(f"{directory}/gnome-shell", exist_ok=True)
     _write(f"{directory}/gnome-shell/gnome-shell.css", css)
-    dock = [dock_accent_css(flavor, accent)] if dock_accent else []
-    if dock_radius is not None:
-        dock.append(dock_shape_css(dock_radius))
-    if show_apps_icon:
-        dock.append(dock_icon_css())
-    if dock:
-        _write(f"{directory}/gnome-shell/{DOCK_STYLESHEET}", "\n".join(dock))
-    if show_apps_icon_file:
-        extension = os.path.splitext(show_apps_icon_file)[1].lower()
-        shutil.copyfile(show_apps_icon_file, f"{directory}/gnome-shell/{DOCK_ICON}{extension}")
+    if dock_accent:
+        _write(f"{directory}/gnome-shell/{DOCK_STYLESHEET}", dock_accent_css(flavor, accent))
         _write(f"{directory}/gnome-shell/{LOCK_STYLESHEET}", lock_accent_css(flavor, accent))
     _write(f"{directory}/index.theme",
            "[Desktop Entry]\n"

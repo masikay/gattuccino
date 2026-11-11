@@ -7,8 +7,11 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 // The look of the two states comes from the Gattuccino shell theme
-// (the floating-panel preference); this extension only decides which of the
-// two classes the panel carries. With another theme it changes nothing.
+// (the floating-panel preference); this extension decides which of the
+// two classes the panel carries, and puts the gap and the corner radius of the
+// floating panel on it as its own settings say, which are changed while it
+// runs and win over the theme's.
+
 const FLOATING_CLASS = 'floating-panel'; // no window is near
 const DOCKED_CLASS = 'docked-panel';     // a window is maximized or close
 
@@ -37,11 +40,13 @@ const IGNORED_APP_IDS = ['com.rastersoft.ding', 'com.desktop.ding'];
 
 export default class FloatingPanelExtension extends Extension {
     enable() {
+        this._prefs = this.getSettings();
         this._signals = [];
         this._windowActors = new Map();
         this._idleId = 0;
         this._docked = null;   // unknown: the first update does not slide
 
+        this._connect(this._prefs, 'changed', () => this._prefsChanged());
         this._connect(global.window_group, 'child-added',
             (_group, actor) => this._trackWindowActor(actor));
         this._connect(global.window_group, 'child-removed',
@@ -80,6 +85,26 @@ export default class FloatingPanelExtension extends Extension {
 
         Main.panel.remove_style_class_name(FLOATING_CLASS);
         Main.panel.remove_style_class_name(DOCKED_CLASS);
+        Main.panel.style = this._styleBefore ?? '';
+        this._prefs = null;
+    }
+
+    // The settings: the gap around the floating panel, and how round it is
+    _floatingStyle() {
+        const gap = this._prefs.get_int('gap');
+        const setting = this._prefs.get_string('radius');
+        const radius = setting === 'round' ? 999 : parseInt(setting, 10);
+        const corners = Number.isFinite(radius) ? ` border-radius: ${radius}px;` : '';
+        return `${this._styleBefore ?? ''} margin: ${gap}px ${gap}px 0 ${gap}px;${corners}`.trim();
+    }
+
+    // A setting changed while the panel floats: it takes it where it is, with
+    // no slide, as the gap is the one part of this that moves the work area
+    _prefsChanged() {
+        if (this._docked !== false)
+            return;
+        Main.panel.style = this._floatingStyle();
+        Main.panel.ensure_style();
     }
 
     _connect(object, signal, callback) {
@@ -147,6 +172,10 @@ export default class FloatingPanelExtension extends Extension {
 
         panel.remove_style_class_name(remove);
         panel.add_style_class_name(add);
+        // The gap and the corners of the floating panel are on the panel while
+        // it floats and off it while it is docked, in step with the classes
+        this._styleBefore ??= panel.style ?? '';
+        panel.style = docked ? this._styleBefore : this._floatingStyle();
         // The panel restyles itself as the classes change, as long as it is on
         // screen; this is for when it is not, so that the margins read below
         // are those of the new state either way.

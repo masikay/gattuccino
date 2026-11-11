@@ -235,8 +235,11 @@ _CHOICES = {
     "accent": (FOLLOW, *palette.ACCENTS),
 }
 _REQUIRES = {name: "floating_panel" for name in FLOATING_ONLY} | {name: "blur" for name in BLUR_ONLY}
-# What the extensions change while they run, once they read their own settings
-_LIVE = frozenset()
+# What the extensions change while they run: they read these from settings of
+# their own (see live.py), and the preferences window of an extension, the
+# Extensions application and this tool all change the same ones
+LIVE_NAMES = frozenset(("blur_radius", "blur_background", "blur_background_radius",
+                        "panel_gap", "panel_radius", "dock_radius", "show_apps_icon"))
 
 
 def all_fields() -> list:
@@ -252,7 +255,7 @@ def all_fields() -> list:
             else:
                 kind = TEXT
             result.append(Field(name, spec, group, kind, tuple(_CHOICES.get(name, ())),
-                                _REQUIRES.get(name), name in _LIVE))
+                                _REQUIRES.get(name), name in LIVE_NAMES))
     return result
 
 

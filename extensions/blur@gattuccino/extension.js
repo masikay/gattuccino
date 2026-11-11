@@ -12,12 +12,12 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {BoxPointer} from 'resource:///org/gnome/shell/ui/boxpointer.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-// A stylesheet cannot blur what is behind it, so the Gattuccino theme states
-// what it would like blurred and this extension does it. Both properties sit on
-// the surface itself (the blur preference puts them on the top bar, on popup
-// menus, on the overview and on the dock); with another theme nothing carries
-// them, and this extension then changes nothing.
-const RADIUS_PROPERTY = '-gattuccino-blur-radius';
+// A stylesheet cannot blur what is behind it, so this extension does. How far
+// is its own setting (radius, and background-radius for the wallpaper behind
+// the overview and the lock screen), which is changed while it runs, in the
+// preferences of the extension or by Gattuccino. How bright the blurred copy
+// is left is still said by the theme, on the surface itself, where the overview
+// takes a little dimming of its own; without it a copy is left as it is.
 const BRIGHTNESS_PROPERTY = '-gattuccino-blur-brightness';
 
 // The surfaces to look for. Each has a shape, the actor the theme fills and
@@ -117,7 +117,8 @@ const RoundedMaskEffect = GObject.registerClass({
  * menu opens with.
  */
 class Backdrop {
-    constructor(shape, anchor, {onGone = null} = {}) {
+    constructor(shape, anchor, {onGone = null, radius = () => 0} = {}) {
+        this._radiusOf = radius;
         this._shape = shape;
         this._anchor = anchor;
         this._onGone = onGone;
@@ -215,7 +216,7 @@ class Backdrop {
         }
 
         const node = this._shape.get_theme_node();
-        const [hasRadius, radius] = node.lookup_length(RADIUS_PROPERTY, false);
+        const radius = this._radiusOf();
         const [hasBrightness, brightness] = node.lookup_double(BRIGHTNESS_PROPERTY, false);
 
         // A surface that is not translucent has nothing to show through it: in
@@ -224,7 +225,7 @@ class Backdrop {
         // nothing, so the blur steps aside until it is translucent again.
         const alpha = node.get_background_color().alpha;
 
-        this._wanted = hasRadius && radius > 0 && alpha > 0 && alpha < 255;
+        this._wanted = radius > 0 && alpha > 0 && alpha < 255;
         if (!this._wanted) {
             this._show();
             return;
@@ -518,10 +519,11 @@ function drawWallpaper(widget, monitor, picture) {
  * left to the Shell, and so to the overview's own color.
  */
 class OverviewWallpaper {
-    constructor(settings) {
+    constructor(settings, prefs) {
         this._widgets = [];
         this._shown = false;
         this._settings = settings;
+        this._prefs = prefs;
         this.rebuild();
     }
 
@@ -570,9 +572,9 @@ class OverviewWallpaper {
             return;
 
         const node = overview.get_theme_node();
-        const [hasRadius, radius] = node.lookup_length(RADIUS_PROPERTY, false);
         const [hasBrightness, brightness] = node.lookup_double(BRIGHTNESS_PROPERTY, false);
-        const wanted = hasRadius && radius > 0;
+        const radius = this._prefs.get_boolean('background') ? this._prefs.get_int('background-radius') : 0;
+        const wanted = radius > 0;
 
         const uiGroup = Main.layoutManager.uiGroup;
         for (const widget of this._widgets) {
@@ -584,6 +586,12 @@ class OverviewWallpaper {
             uiGroup.set_child_below_sibling(widget, overview);
             widget.opacity = wanted ? 255 : 0;
         }
+    }
+
+    /** A setting changed: what is shown takes it, and what is not shown waits */
+    refresh() {
+        if (this._shown)
+            this.show();
     }
 
     hide() {
@@ -606,13 +614,9 @@ class OverviewWallpaper {
  * dimming are left as they are.
  */
 class LockWallpaper {
-    constructor(settings) {
+    constructor(settings, prefs) {
         this._settings = settings;
-        // How far the theme blurs the lock screen's wallpaper, 0 for not at
-        // all, or null when it is not known. It is read while the desktop is
-        // up: the lock screen runs with GNOME's own stylesheet, with none of
-        // this theme's rules in it.
-        this.radius = null;
+        this._prefs = prefs;
         this._dressed = new Set();   // [widget, [what was hidden], [what was added]]
         this._signals = [];
         this._idles = new Set();
@@ -674,14 +678,10 @@ class LockWallpaper {
         if (!monitor)
             return;
 
-        // Whether the theme asks for it, and how far, is said on the widget
-        // itself; with another theme, or with the background blur turned off,
-        // the lock screen is left exactly as the Shell makes it.
-        let radius = this.radius;
-        if (radius === null) {
-            const [has, asked] = widget.get_theme_node().lookup_length(RADIUS_PROPERTY, false);
-            radius = has ? asked : 0;
-        }
+        // How far is the extension's own setting, which is there on the lock
+        // screen too, where the theme's stylesheet is not; with the background
+        // blur turned off the lock screen is left exactly as the Shell makes it.
+        const radius = this._prefs.get_boolean('background') ? this._prefs.get_int('background-radius') : 0;
         if (radius <= 0)
             return;
 
@@ -693,8 +693,8 @@ class LockWallpaper {
         drawWallpaper(widget, monitor, picture);
         const added = widget.get_children().filter(child => !hidden.includes(child));
 
-        // The Shell blurs its lock screen by 90 pixels; the theme says how far
-        // it is to be blurred, and its dimming is the Shell's own.
+        // The Shell blurs its lock screen by 90 pixels; the setting says how far
+        // it is to be blurred instead, and its dimming is the Shell's own.
         const effect = widget.get_effect('blur');
         const was = effect ? {radius: effect.radius} : null;
         if (effect)
@@ -736,24 +736,19 @@ class LockWallpaper {
 export default class BlurExtension extends Extension {
     enable() {
         this._backdrops = new Set();   // one for each surface
+        // How far to blur, which is changed while this runs
+        this._prefs = this.getSettings();
         // One reading of the wallpaper for both places it is drawn
         this._settings = new WallpaperSettings(() => {
             this._wallpaper?.rebuild();
             this._lock?.refresh();
         });
-        this._wallpaper = new OverviewWallpaper(this._settings);   // what the overview is glass over
-        this._lock = new LockWallpaper(this._settings);
+        this._wallpaper = new OverviewWallpaper(this._settings, this._prefs);   // what the overview is glass over
+        this._lock = new LockWallpaper(this._settings, this._prefs);
         this._signals = [];
 
         const uiGroup = Main.layoutManager.uiGroup;
-        // A widget of the lock screen's kind, kept out of sight, to read what
-        // the theme says about it
-        this._probe = new St.Widget({
-            name: 'gattuccino-probe', style_class: 'screen-shield-background',
-            width: 1, height: 1, opacity: 0, reactive: false,
-        });
-        uiGroup.add_child(this._probe);
-        this._readLockRadius();
+        this._connect(this._prefs, 'changed', () => this._prefsChanged());
         this._connect(uiGroup, 'child-added', (_group, actor) => this._watch(actor));
         this._connect(uiGroup, 'child-removed', (_group, actor) => this._unwatch(actor));
         // The desktop is hidden while the overview is open, and a copy of it is
@@ -766,10 +761,7 @@ export default class BlurExtension extends Extension {
         // The theme is reloaded whole whenever the style or the accent changes,
         // and for a moment carries none of this project's properties. Every
         // surface is asked again once it has settled.
-        this._connect(St.ThemeContext.get_for_stage(global.stage), 'changed', () => {
-            this._refreshAll();
-            this._readLockRadius();
-        });
+        this._connect(St.ThemeContext.get_for_stage(global.stage), 'changed', () => this._refreshAll());
         this._connect(Main.overview, 'showing', () => {
             this._refreshAll();
             this._wallpaper.show();
@@ -794,23 +786,21 @@ export default class BlurExtension extends Extension {
         this._wallpaper = null;
         this._lock.destroy();
         this._lock = null;
-        this._probe.destroy();
-        this._probe = null;
         this._settings.destroy();
         this._settings = null;
+        this._prefs = null;
     }
 
     _connect(object, signal, callback) {
         this._signals.push([object, object.connect(signal, callback)]);
     }
 
-    // Not while the screen is locked: the stylesheet is then GNOME's own, and
-    // would say the theme asks for nothing.
-    _readLockRadius() {
-        if (Main.sessionMode?.isLocked || !this._probe?.mapped)
-            return;
-        const [has, radius] = this._probe.get_theme_node().lookup_length(RADIUS_PROPERTY, false);
-        this._lock.radius = has && radius > 0 ? Math.round(radius) : 0;
+    // A setting was changed, in the preferences or by Gattuccino: every blur
+    // takes it at once
+    _prefsChanged() {
+        this._refreshAll();
+        this._wallpaper.refresh();
+        this._lock.refresh();
     }
 
     // Everything the theme may have asked to blur is in the UI group: the top
@@ -850,8 +840,10 @@ export default class BlurExtension extends Extension {
     _add(shape, anchor) {
         if (!anchor || !anchor.get_parent() || this._find(anchor))
             return;
-        const backdrop = new Backdrop(shape, anchor,
-            {onGone: () => this._backdrops.delete(backdrop)});
+        const backdrop = new Backdrop(shape, anchor, {
+            onGone: () => this._backdrops.delete(backdrop),
+            radius: () => this._prefs.get_int('radius'),
+        });
         this._backdrops.add(backdrop);
     }
 
