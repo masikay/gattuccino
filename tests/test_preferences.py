@@ -74,6 +74,15 @@ class PreferencesTest(unittest.TestCase):
         for wrong in (icon + ".missing.svg", os.path.join(self.directory.name, "notes.txt")):
             with self.assertRaises(prefs.PreferenceError, msg=wrong):
                 prefs.Preferences().set("show_apps_icon", wrong)
+        # {flavor} stands for the flavor in use: one file of the kind is enough to choose it
+        pattern = os.path.join(self.directory.name, "apps-{flavor}.svg")
+        with self.assertRaises(prefs.PreferenceError):
+            prefs.Preferences().set("show_apps_icon", pattern)
+        with open(os.path.join(self.directory.name, "apps-mocha.svg"), "w") as f:
+            f.write("<svg/>")
+        p = prefs.Preferences()
+        p.set("show_apps_icon", pattern)
+        self.assertEqual(p.show_apps_icon, pattern)
         # but one that has gone since it was chosen does not stop the file from being read
         gone = icon + ".gone.svg"
         with open(self.path, "w") as f:

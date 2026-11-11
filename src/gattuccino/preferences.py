@@ -94,6 +94,14 @@ def _dock_radius(text: str):
 
 ICON_DEFAULT = "default"   # show_apps_icon: the icon GNOME draws
 ICON_SUFFIXES = (".svg", ".png")
+ICON_FLAVOR = "{flavor}"   # show_apps_icon: stands for the flavor in use
+
+
+def icon_files(path: str):
+    """The files a show_apps_icon can be: one, or one for each flavor if it has {flavor} in it."""
+    if ICON_FLAVOR not in path:
+        return [path]
+    return [path.replace(ICON_FLAVOR, flavor) for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS)]
 
 
 def _icon_file(text: str):
@@ -103,8 +111,9 @@ def _icon_file(text: str):
     path = os.path.abspath(os.path.expanduser(value))
     if not path.lower().endswith(ICON_SUFFIXES):
         raise PreferenceError("expected an .svg or .png file, or 'default'")
-    if not os.path.isfile(path):
-        raise PreferenceError(f"{path} was not found")
+    files = icon_files(path)
+    if not any(os.path.isfile(file) for file in files):
+        raise PreferenceError(f"{files[0] if len(files) == 1 else path} was not found")
     return path
 
 
@@ -162,7 +171,8 @@ SPECS = {
                         none_as=DOCK),
     "show_apps_icon": Spec(_icon_file, f"{ICON_DEFAULT}, or an .svg or .png file",
                            "Icon of the Show Applications button of the dock of Dash to Dock; "
-                           f"'{ICON_DEFAULT}' keeps the one GNOME draws",
+                           f"{ICON_FLAVOR} in the name stands for the flavor in use, so that there can be one for "
+                           f"each; '{ICON_DEFAULT}' keeps the one GNOME draws",
                            none_as=ICON_DEFAULT),
     "blur": Spec(_blur, "yes, no",
                  "Blur the desktop behind the top bar, popup menus, the overview and the dock"),

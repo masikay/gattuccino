@@ -370,6 +370,28 @@ class ShowAppsIconTest(unittest.TestCase):
         self.assertTrue(os.path.exists(
             f"{self.home.data}/icons/hicolor/256x256/actions/view-app-grid-user-symbolic.png"))
 
+    def test_the_icon_of_the_flavor_in_use_is_chosen(self):
+        for flavor in ("latte", "mocha"):
+            with open(f"{self.home.home}/apps-{flavor}.svg", "w") as f:
+                f.write(f"<svg>{flavor}</svg>")
+        pattern = f"{self.home.home}/apps-{{flavor}}.svg"
+
+        # the light style is Latte
+        self.home.set_setting(INTERFACE, "color-scheme", "default")
+        self.apply("--flavor", "mocha", "--show-apps-icon", pattern)
+        self.assertEqual(self.home.read(self.target), "<svg>latte</svg>")
+        self.assertEqual(self.home.read(self.plain), "<svg>latte</svg>")
+
+        # the dark style is the flavor chosen
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
+        self.home.ok("apply")
+        self.assertEqual(self.home.read(self.target), "<svg>mocha</svg>")
+
+        # a flavor with no icon of its own leaves GNOME's, and says so
+        result = self.apply("--flavor", "frappe")
+        self.assertIn("was not found", result)
+        self.assertFalse(os.path.exists(self.target))
+
     def test_an_icon_that_has_gone_does_not_stop_another_from_being_chosen(self):
         self.apply("--show-apps-icon", self.icon)
         os.remove(self.icon)

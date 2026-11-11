@@ -14,7 +14,7 @@ import time
 
 from . import gtk_theme, palette, shell_theme, sources
 from .desktop import INTERFACE_SCHEMA, USER_THEME_SCHEMA, USER_THEME_UUID, Desktop
-from .preferences import AUTO, Preferences
+from .preferences import AUTO, ICON_FLAVOR, Preferences
 
 # install.py is src/gattuccino/install.py: three levels up is the repo root.
 EXTENSIONS_SOURCE = os.path.join(
@@ -388,7 +388,9 @@ def _remove_show_apps_icon(desktop: Desktop, state) -> bool:
 def _install_show_apps_icon(desktop: Desktop, preferences: Preferences, state, notes) -> bool:
     """Put the icon in place, or take the one put there before away. Says
     whether the icons changed, which GNOME Shell only notices after a login."""
-    source = preferences.show_apps_icon
+    # With {flavor} in the name, the icon of the flavor in use
+    source = (preferences.show_apps_icon.replace(ICON_FLAVOR, current_flavor(preferences, desktop))
+              if preferences.show_apps_icon else None)
     targets = _show_apps_icon_targets(desktop, source) if source else []
     changed = _remove_show_apps_icon(desktop, state)
     if targets and not os.path.isfile(source):
