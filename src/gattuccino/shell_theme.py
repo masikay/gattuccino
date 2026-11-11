@@ -664,8 +664,15 @@ def dock_icon_css() -> str:
 """
 
 
+# The Show Applications icon of a theme, which is the icon of its flavor: the
+# Catppuccin Accent extension puts it on the dock whenever the theme is
+# selected, so the icon follows the style as the theme does.
+DOCK_ICON = "show-apps-icon"
+
+
 def write_theme(directory: str, css: str, flavor: str, accent: str, shell_version: str,
-                dock_accent: bool = False, dock_radius=None, show_apps_icon: bool = False):
+                dock_accent: bool = False, dock_radius=None, show_apps_icon: bool = False,
+                show_apps_icon_file: Optional[str] = None):
     """Write a theme folder the User Themes extension can load."""
     os.makedirs(f"{directory}/gnome-shell", exist_ok=True)
     _write(f"{directory}/gnome-shell/gnome-shell.css", css)
@@ -676,6 +683,9 @@ def write_theme(directory: str, css: str, flavor: str, accent: str, shell_versio
         dock.append(dock_icon_css())
     if dock:
         _write(f"{directory}/gnome-shell/{DOCK_STYLESHEET}", "\n".join(dock))
+    if show_apps_icon_file:
+        extension = os.path.splitext(show_apps_icon_file)[1].lower()
+        shutil.copyfile(show_apps_icon_file, f"{directory}/gnome-shell/{DOCK_ICON}{extension}")
         _write(f"{directory}/gnome-shell/{LOCK_STYLESHEET}", lock_accent_css(flavor, accent))
     _write(f"{directory}/index.theme",
            "[Desktop Entry]\n"

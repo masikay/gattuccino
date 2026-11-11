@@ -181,7 +181,8 @@ def _install_shell_themes(desktop: Desktop, preferences: Preferences, version: s
         shell_theme.write_theme(f"{desktop.themes_dir}/{name}", css, flavor, accent, version,
                                 dock_accent=preferences.accent_selection,
                                 dock_radius=preferences.dock_radius,
-                                show_apps_icon=bool(preferences.show_apps_icon))
+                                show_apps_icon=bool(preferences.show_apps_icon),
+                                show_apps_icon_file=_show_apps_icon_file(preferences, flavor))
 
     if schema_args is None:
         notes.append("The User Themes extension is not installed, so the shell theme is not in use yet. "
@@ -364,6 +365,15 @@ def _remove_extension(desktop: Desktop, uuid: str):
 SHOW_APPS_ICON = "view-app-grid-user-symbolic"
 
 
+def _show_apps_icon_file(preferences: Preferences, flavor: str):
+    """The icon of a flavor, if there is one: the file of the preference, or the
+    one of the name with {flavor} replaced."""
+    if not preferences.show_apps_icon:
+        return None
+    path = preferences.show_apps_icon.replace(ICON_FLAVOR, flavor)
+    return path if os.path.isfile(path) else None
+
+
 def _show_apps_icon_targets(desktop: Desktop, source: str):
     """The icon under the name that is asked for, and under the same name
     without -symbolic, which is what is looked up when the icon is drawn as it
@@ -391,6 +401,8 @@ def _install_show_apps_icon(desktop: Desktop, preferences: Preferences, state, n
     # With {flavor} in the name, the icon of the flavor in use
     source = (preferences.show_apps_icon.replace(ICON_FLAVOR, current_flavor(preferences, desktop))
               if preferences.show_apps_icon else None)
+    # This is the icon the dock has from the icon folder, for the flavor in use;
+    # the extension puts the one of the theme on it as the theme changes
     targets = _show_apps_icon_targets(desktop, source) if source else []
     changed = _remove_show_apps_icon(desktop, state)
     if targets and not os.path.isfile(source):

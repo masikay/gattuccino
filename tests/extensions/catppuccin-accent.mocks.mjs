@@ -70,11 +70,15 @@ class File {
     }
 }
 
+export class FileIcon {
+    constructor({file}) { this.file = file; }
+    get_file() { return this.file; }
+}
 const source = hasUserThemes => ({
     lookup: id => id === 'org.gnome.shell.extensions.user-theme' && hasUserThemes ? {id} : null,
 });
 export const Gio = {
-    Settings, File, FileCreateFlags: {NONE: 0},
+    Settings, File, FileIcon, FileCreateFlags: {NONE: 0},
     SettingsSchemaSource: {
         get_default: () => source(environment.userThemes === 'system'),
         new_from_directory(path) {
@@ -94,7 +98,48 @@ export const GLib = {
     get_system_data_dirs: () => ['/usr/local/share', '/usr/share'],
     get_user_config_dir: () => '/home/u/.config',
 };
+// Actors, for the Show Applications button of the dock: its container, an icon
+// in a bin, as the Shell and Dash to Dock build it
+export class Actor {
+    constructor(properties = {}) {
+        Object.assign(this, {name: '', style_class: '', children: [], parent: null}, properties);
+    }
+    get_children() { return [...this.children]; }
+    get_parent() { return this.parent; }
+    has_style_class_name(name) { return this.style_class.split(' ').includes(name); }
+    add_child(child) { child.parent = this; this.children.push(child); }
+    connect(signal, callback) {
+        const id = ++handlerNext;
+        handlers.set(id, [this, signal, callback]);
+        return id;
+    }
+    disconnect(id) { if (!handlers.delete(id)) throw new Error('unknown handler'); }
+    // What Dash to Dock does when it makes the icon again, as it does for a new size
+    replaceChild(child) {
+        this.children = [];
+        this.add_child(child);
+        emitSignal(this, 'notify::child');
+    }
+}
+export const uiGroup = new Actor({name: 'uiGroup'});
+uiGroup.add_child = function (child) {
+    child.parent = this;
+    this.children.push(child);
+    emitSignal(this, 'child-added');
+};
+/** The dock: a container with a bin in it that holds a button's icon */
+export function dock() {
+    const container = new Actor({name: 'dashtodockContainer'});
+    const bin = new Actor();
+    const makeIcon = () => new Actor({style_class: 'show-apps-icon', icon_name: 'view-app-grid-user-symbolic', gicon: null});
+    container.add_child(bin);
+    bin.add_child(makeIcon());
+    uiGroup.add_child(container);
+    return {container, bin, makeIcon, icon: () => bin.children[0]};
+}
+
 export const Main = {
+    layoutManager: {uiGroup},
     extensionManager: {
         lookup: uuid => uuid === USER_THEME_UUID && environment.userThemes === 'user'
             ? {dir: new File(USER_THEME_DIR)} : undefined,

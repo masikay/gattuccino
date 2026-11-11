@@ -18,6 +18,9 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 //   and switches GTK 3 between adw-gtk3 and adw-gtk3-dark;
 // - the dock of Dash to Dock: loads gattuccino-dock.css, the accent
 //   rules the theme in use was built with, if it has them;
+// - the Show Applications icon of the dock: puts the icon the theme carries,
+//   show-apps-icon.svg or .png, on the dock, so that it is the icon of the
+//   flavor in use as the style, and so the theme, is switched;
 // - the lock screen: the same for gattuccino-lock.css. The Shell runs the
 //   lock screen with its own stylesheet and not the theme's, so the accent
 //   there is a stylesheet of an extension too, which this one keeps loaded
@@ -84,6 +87,9 @@ const USER_THEME_SCHEMA = 'org.gnome.shell.extensions.user-theme';
 const DOCK_STYLESHEET = 'gattuccino-dock.css';
 const LOCK_STYLESHEET = 'gattuccino-lock.css';
 const ACCENT_STYLESHEETS = [DOCK_STYLESHEET, LOCK_STYLESHEET];
+const DOCK_ICON_FILES = ['show-apps-icon.svg', 'show-apps-icon.png'];
+const DOCK_CONTAINER = 'dashtodockContainer';
+const SHOW_APPS_ICON_CLASS = 'show-apps-icon';
 
 // Same places the User Themes extension loads shell themes from
 function themeDirs() {
@@ -155,6 +161,15 @@ export default class CatppuccinAccentExtension extends Extension {
         this._userThemeSettings = this._getUserThemeSettings();
         this._dockStylesheet = null;
         this._dockIdleId = 0;
+        this._dockIcon = null;          // the file of the icon of the theme in use, if it has one
+        this._dressed = new Map();      // St.Icon -> what it was before
+        this._iconBins = new Map();     // what holds them -> the ids of what is heard from it
+        this._iconIdleId = 0;
+        this._uiGroupId = 0;
+        // A dock that comes and goes, and one that is made again
+        const uiGroup = Main.layoutManager?.uiGroup;
+        if (uiGroup)
+            this._uiGroupId = uiGroup.connect('child-added', () => this._queueIcons());
 
         this._changedIds = ['accent-color', 'color-scheme'].map(key =>
             this._interfaceSettings.connect(`changed::${key}`, () => this._sync()));
@@ -185,6 +200,7 @@ export default class CatppuccinAccentExtension extends Extension {
             this._dockIdleId = 0;
         }
         this._unloadDock();
+        this._unloadDockIcon();
         this._themeContext = null;
         this._interfaceSettings = null;
         this._userThemeSettings = null;
@@ -292,6 +308,9 @@ export default class CatppuccinAccentExtension extends Extension {
     _syncDock() {
         const theme = this._themeContext?.get_theme();
         const name = this._userThemeSettings?.get_string('name');
+        this._setDockIcon(name?.match(VARIANT_NAME)
+            ? DOCK_ICON_FILES.map(basename => this._themeFile(name, basename)).find(file => file) ?? null
+            : null);
         const files = name?.match(VARIANT_NAME)
             ? ACCENT_STYLESHEETS.map(basename => this._themeFile(name, basename)).filter(file => file)
             : [];
@@ -328,6 +347,112 @@ export default class CatppuccinAccentExtension extends Extension {
                 console.warn(`${this.uuid}: could not unload ${file.get_path()}: ${e.message}`);
             }
         }
+    }
+
+    // The icon of the theme in use goes on the Show Applications button of the
+    // dock, and comes off again when the theme has none. It is put on the
+    // button itself and not into the icon folder: the Shell has read the icons
+    // by then, and a new one would show only after the next login.
+    _setDockIcon(file) {
+        if (this._dockIcon === file || (file && this._dockIcon?.equal(file)))
+            return;
+        this._dockIcon = file;
+        this._queueIcons();
+    }
+
+    _queueIcons() {
+        if (this._iconIdleId)
+            return;
+        this._iconIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._iconIdleId = 0;
+            this._dressIcons();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    // The buttons are made again whenever the dock changes the size of its
+    // icons, and each time they come without the icon: it is heard from the
+    // actor that holds them.
+    _dressIcons() {
+        const found = this._findShowAppsIcons();
+        if (this._dockIcon) {
+            for (const icon of found)
+                this._dressIcon(icon, this._dockIcon);
+            // The ones that were made again are gone, and need nothing put back
+            for (const icon of [...this._dressed.keys()]) {
+                if (!found.includes(icon))
+                    this._dressed.delete(icon);
+            }
+            return;
+        }
+
+        // The theme has no icon: what was dressed is put back
+        for (const [icon, before] of this._dressed)
+            this._restoreIcon(icon, before);
+        this._dressed.clear();
+    }
+
+    _findShowAppsIcons() {
+        const found = [];
+        const uiGroup = Main.layoutManager?.uiGroup;
+        const stack = (uiGroup?.get_children() ?? []).filter(actor => actor.name === DOCK_CONTAINER);
+        while (stack.length) {
+            const actor = stack.pop();
+            if (actor.has_style_class_name?.(SHOW_APPS_ICON_CLASS))
+                found.push(actor);
+            stack.push(...actor.get_children());
+        }
+        return found;
+    }
+
+    _dressIcon(icon, file) {
+        const parent = icon.get_parent();
+        if (parent && !this._iconBins.has(parent)) {
+            this._iconBins.set(parent, [
+                parent.connect('notify::child', () => this._queueIcons()),
+                parent.connect('destroy', () => this._iconBins.delete(parent)),
+            ]);
+        }
+        if (!this._dressed.has(icon))
+            this._dressed.set(icon, {name: icon.icon_name, gicon: icon.gicon});
+        if (icon.gicon?.get_file?.().equal(file))
+            return;
+        icon.gicon = new Gio.FileIcon({file});
+    }
+
+    _restoreIcon(icon, before) {
+        try {
+            if (before.name)
+                icon.icon_name = before.name;
+            else
+                icon.gicon = before.gicon;
+        } catch (e) {
+            // the button has gone, and its icon with it
+        }
+    }
+
+    _unloadDockIcon() {
+        if (this._iconIdleId) {
+            GLib.source_remove(this._iconIdleId);
+            this._iconIdleId = 0;
+        }
+        if (this._uiGroupId)
+            Main.layoutManager.uiGroup.disconnect(this._uiGroupId);
+        this._uiGroupId = 0;
+        for (const [bin, ids] of this._iconBins) {
+            for (const id of ids) {
+                try {
+                    bin.disconnect(id);
+                } catch (e) {
+                    // gone with the dock
+                }
+            }
+        }
+        this._iconBins.clear();
+        this._dockIcon = null;
+        for (const [icon, before] of this._dressed)
+            this._restoreIcon(icon, before);
+        this._dressed.clear();
     }
 
     _syncGtk(picked, dark) {

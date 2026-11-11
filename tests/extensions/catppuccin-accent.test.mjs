@@ -3,7 +3,7 @@ import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
 import {
-    USER_THEME_DIR, environment, files, handlerCount, loadCalls, loaded, pendingIdle, pickAccent,
+    USER_THEME_DIR, dock, environment, files, handlerCount, loadCalls, loaded, pendingIdle, pickAccent,
     pickStyle, replaceTheme, resetLoadCalls, settle,
     settings, switchTheme, written,
 } from './catppuccin-accent.mocks.mjs';
@@ -213,6 +213,38 @@ test('catppuccin accent', async t => {
         switchTheme('gattuccino-mocha-teal');
         assert.deepEqual(dockLoaded(), [dockSheet('gattuccino-mocha-teal'), lockSheet('gattuccino-mocha-teal')]);
         files.delete(lockSheet('gattuccino-mocha-teal'));
+    });
+
+    // The icon of the theme goes on the button of the dock as the theme is
+    // switched, which is how it follows the style: the Shell has read the icons
+    // by then, so one put in the icon folder would show after the next login
+    await t.test('puts the icon of the theme on the Show Applications button of the dock', () => {
+        const iconOf = name => `/home/u/.themes/${name}/gnome-shell/show-apps-icon.svg`;
+        files.set(iconOf('gattuccino-mocha-teal'), '<svg/>');
+        files.set(iconOf('gattuccino-latte-teal'), '<svg/>');
+        const {icon, bin, makeIcon} = dock();
+
+        switchTheme('gattuccino-mocha-teal');
+        settle();
+        assert.equal(icon().gicon.get_file().get_path(), iconOf('gattuccino-mocha-teal'));
+
+        // the style is switched: another theme, and with it another icon
+        switchTheme('gattuccino-latte-teal');
+        settle();
+        assert.equal(icon().gicon.get_file().get_path(), iconOf('gattuccino-latte-teal'));
+
+        // the dock makes the button again, for another size of icon
+        bin.replaceChild(makeIcon());
+        assert.equal(icon().gicon, null);
+        settle();
+        assert.equal(icon().gicon.get_file().get_path(), iconOf('gattuccino-latte-teal'));
+
+        // a theme with no icon of its own puts the dock's own back
+        files.delete(iconOf('gattuccino-latte-teal'));
+        files.delete(iconOf('gattuccino-mocha-teal'));
+        switchTheme('gattuccino-mocha-teal');
+        settle();
+        assert.equal(icon().icon_name, 'view-app-grid-user-symbolic');
     });
 
     await t.test('loads the accent rules for the dock that come with the theme', () => {

@@ -1,4 +1,6 @@
+import os
 import re
+import tempfile
 import unittest
 
 from gattuccino import palette, shell_theme
@@ -258,3 +260,24 @@ class ShellThemeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WriteThemeIconTest(unittest.TestCase):
+    """The icon a theme carries, which the extension puts on the dock when the theme is selected."""
+
+    def write(self, **options):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        shell_theme.write_theme(f"{directory.name}/theme", "/* css */", "mocha", "teal", "49.2", **options)
+        return directory.name
+
+    def test_the_icon_goes_with_the_theme_under_a_name_of_its_own(self):
+        directory = self.write()
+        self.assertEqual(os.listdir(f"{directory}/theme/gnome-shell"), ["gnome-shell.css"])
+
+        for name in ("apps.svg", "apps.PNG"):
+            source = f"{directory}/{name}"
+            with open(source, "w") as f:
+                f.write(name)
+            theme = self.write(show_apps_icon_file=source)
+            self.assertIn(f"show-apps-icon{os.path.splitext(name)[1].lower()}", os.listdir(f"{theme}/theme/gnome-shell"))
