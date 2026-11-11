@@ -15,6 +15,7 @@ and two small extensions (floating top bar, accent color following Settings).
 
   gattuccino configure    choose your preferences (asks questions)
   gattuccino apply        build and install what the preferences say
+  gattuccino gui          open the window with the preferences
   gattuccino show         print the preferences
   gattuccino uninstall    remove everything again
 """
@@ -32,14 +33,6 @@ def _add_preference_options(parser):
         else:
             parser.add_argument(_option(name), dest=name, default=None, metavar="VALUE",
                                 help=f"{spec.help} ({spec.values})")
-
-
-def load(desktop):
-    """The preferences as they are now: the file, with the values the extensions
-    have in their settings, which may have been changed since in their own windows."""
-    preferences = prefs.load(desktop.preferences_path)
-    live.pull(desktop, preferences)
-    return preferences
 
 
 def _show(preferences, desktop, out=print):
@@ -93,7 +86,7 @@ def _yes(question: str) -> bool:
 
 
 def _configure(args, desktop):
-    preferences = load(desktop)
+    preferences = live.load(desktop)
     given = {name: getattr(args, name) for name in prefs.SPECS if getattr(args, name) is not None}
 
     if given:
@@ -130,6 +123,15 @@ def _configure(args, desktop):
         install.apply(preferences, desktop)
     else:
         print("\nRun `gattuccino apply` to put them in effect.")
+
+
+def _gui() -> int:
+    try:
+        from . import gui
+    except (ImportError, ValueError) as e:
+        raise prefs.PreferenceError(
+            f"the window needs GTK 4 and libadwaita for Python (python3-gobject): {e}") from None
+    return gui.run([sys.argv[0]])
 
 
 def _build(args, desktop):
@@ -169,6 +171,10 @@ def main(argv=None) -> int:
                         description="Builds the shell theme for your GNOME Shell version and installs "
                                     "everything the preferences ask for; removes what they no longer ask for.")
     commands.add_parser("show", help="print the preferences")
+    commands.add_parser("gui", help="open the window with the preferences",
+                        description="Opens a window with the preferences, to change them once the theme is "
+                                    "installed. The ones the extensions change while they run take effect "
+                                    "at once; the rest wait for its Apply button.")
     build = commands.add_parser("build", help="build into a folder without installing",
                                 description="Builds the shell themes and application colors of the "
                                             "current preferences into a folder, and changes nothing else.")
@@ -183,9 +189,11 @@ def main(argv=None) -> int:
         if args.command == "configure":
             _configure(args, desktop)
         elif args.command == "apply":
-            install.apply(load(desktop), desktop)
+            install.apply(live.load(desktop), desktop)
+        elif args.command == "gui":
+            return _gui()
         elif args.command == "show":
-            _show(load(desktop), desktop)
+            _show(live.load(desktop), desktop)
         elif args.command == "build":
             _build(args, desktop)
         elif args.command == "uninstall":

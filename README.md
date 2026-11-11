@@ -19,7 +19,7 @@ Until October 2026 this project was itself called `gnome-catppuccin`. An install
 - The [User Themes](https://extensions.gnome.org/extension/19/user-themes/) extension, to load the Shell theme (package `gnome-shell-extension-user-theme` or `gnome-shell-extensions`, depending on the distribution)
 - An internet connection the first time, and after each GNOME upgrade, to download the GNOME Shell stylesheets the theme is built from
 
-Optional: the [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) theme, for GTK 3 applications to follow, and [Textual](https://textual.textualize.io/) (package `python3-textual`, or `pip install textual`) for the menus of `configure`, which asks its questions one by one without it.
+Optional: the [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) theme, for GTK 3 applications to follow, [Textual](https://textual.textualize.io/) (package `python3-textual`, or `pip install textual`) for the menus of `configure`, which asks its questions one by one without it, and GTK 4 with libadwaita for Python (package `python3-gobject`, which a GNOME session has) for the window of `gui`.
 
 ## Quick start
 
@@ -40,6 +40,7 @@ With the defaults you get Latte for the light style and Mocha for the dark style
 | `./gattuccino configure` | Show the menus (or ask for every preference with `--plain`), save them, and offer to apply |
 | `./gattuccino configure --flavor frappe --apply` | Change just the preferences given, and apply |
 | `./gattuccino apply` | Build and install what the preferences say; remove what they no longer ask for |
+| `./gattuccino gui` | Open the window with the preferences (also in the app grid, as *Gattuccino*, once `apply` has run) |
 | `./gattuccino show` | Print the preferences |
 | `./gattuccino build --output FOLDER` | Build into a folder and change nothing else |
 | `./gattuccino uninstall` | Remove everything and put back the settings that were changed |
@@ -95,6 +96,10 @@ Some examples:
 ./gattuccino configure --accent-selection --apply
 ```
 
+## The window
+
+`./gattuccino gui`, or *Gattuccino* in the app grid once `apply` has run, opens a window with the same preferences as `configure`, in groups (Colors, Top bar, Dock, Blur, Install) with a row for each. The ones the extensions change while they run are marked *live* and take effect as the row is changed; the rest are saved as they are changed, and the Apply button, which counts them, builds and installs what they say, with the log of it in a dialog. Coming back to the window reads the extensions' settings again, so a change made in one of their own windows shows. The preferences of each extension, in Extensions or Extension Manager, have a button that opens it.
+
 ## What is installed where
 
 | What | Where | When |
@@ -107,6 +112,7 @@ Some examples:
 | Extension `catppuccin-accent@gattuccino`, with its settings (`schemas`) | `~/.local/share/gnome-shell/extensions` | `shell-theme` or `gtk-theme` is on |
 | Extension `floating-panel@gattuccino`, with its settings | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `floating-panel` are on |
 | Extension `blur@gattuccino`, with its settings | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `blur` are on |
+| `org.gattuccino.Preferences.desktop`, and its icon under `hicolor` | `~/.local/share/applications`, `~/.local/share/icons` | always |
 | Preferences, and a record of what was changed | `~/.config/gattuccino` | always |
 | The downloaded GNOME Shell stylesheets | `~/.cache/gattuccino` | `shell-theme` is on |
 
@@ -278,7 +284,7 @@ tests/                      tests
 python3 -m unittest discover -s tests -t .
 ```
 
-The tests run the real command in a throwaway home folder, with stand-ins for `gsettings`, `gnome-extensions`, `flatpak` and `gnome-shell`, so they change nothing on the machine. The extensions are tested with [Node.js](https://nodejs.org) against stand-ins for GNOME Shell's objects; those tests are skipped if it is not installed. The first run downloads the GNOME Shell stylesheets into `tests/.cache`.
+The tests run the real command in a throwaway home folder, with stand-ins for `gsettings`, `gnome-extensions`, `glib-compile-schemas`, `flatpak` and `gnome-shell`, so they change nothing on the machine. The terminal menus are driven with keys through Textual, and the window is built with GTK and changed as a person would, but never shown; both are skipped if what they need (Textual, GTK 4 and a display) is not there. The extensions are tested with [Node.js](https://nodejs.org) against stand-ins for GNOME Shell's objects; those tests are skipped if it is not installed. The first run downloads the GNOME Shell stylesheets into `tests/.cache`.
 
 ## Credits and license
 

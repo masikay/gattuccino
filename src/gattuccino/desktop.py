@@ -26,6 +26,7 @@ class Desktop:
         self.themes_dir = f"{self.home}/.themes"
         self.extensions_dir = f"{data}/gnome-shell/extensions"
         self.icons_dir = f"{data}/icons"
+        self.applications_dir = f"{data}/applications"
         self.flatpak_overrides = f"{data}/flatpak/overrides/global"
         self.cache_dir = f"{cache}/gattuccino"
         # Earlier versions, under this project's old name, kept their own

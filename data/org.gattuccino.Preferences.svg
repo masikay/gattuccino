@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Gattuccino</title>
+  <rect width="128" height="128" rx="30" fill="#1e1e2e"/>
+  <rect x="18" y="18" width="24" height="24" rx="7" fill="#f38ba8"/>
+  <rect x="52" y="18" width="24" height="24" rx="7" fill="#fab387"/>
+  <rect x="86" y="18" width="24" height="24" rx="7" fill="#f9e2af"/>
+  <rect x="18" y="52" width="24" height="24" rx="7" fill="#a6e3a1"/>
+  <rect x="52" y="52" width="24" height="24" rx="7" fill="#94e2d5"/>
+  <rect x="86" y="52" width="24" height="24" rx="7" fill="#74c7ec"/>
+  <rect x="18" y="86" width="24" height="24" rx="7" fill="#89b4fa"/>
+  <rect x="52" y="86" width="24" height="24" rx="7" fill="#cba6f7"/>
+  <rect x="86" y="86" width="24" height="24" rx="7" fill="#f5c2e7"/>
+</svg>

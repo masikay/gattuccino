@@ -1,0 +1,12 @@
+[Desktop Entry]
+# Written by gattuccino. Edits are overwritten.
+Type=Application
+Name=Gattuccino
+Comment=Catppuccin for GNOME: the theme and its extensions
+Exec=@EXEC@ gui
+Icon=org.gattuccino.Preferences
+Terminal=false
+Categories=GNOME;GTK;Settings;DesktopSettings;
+Keywords=catppuccin;theme;blur;dock;
+StartupNotify=true
+StartupWMClass=org.gattuccino.Preferences

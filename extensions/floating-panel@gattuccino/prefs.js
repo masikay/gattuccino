@@ -54,5 +54,30 @@ export default class FloatingPanelPreferences extends ExtensionPreferences {
         radius.connect('notify::value', write);
         settings.connect('changed::radius', show);
         show();
+
+        // What is built into the theme and not changed while it runs is in the
+        // Gattuccino window, or `gattuccino configure`
+        const more = new Adw.PreferencesGroup();
+        const row = new Adw.ActionRow({
+            title: 'More settings',
+            subtitle: 'The colors, the opacities and what is installed are in the Gattuccino window.',
+        });
+        const button = new Gtk.Button({label: 'Open Gattuccino', valign: Gtk.Align.CENTER});
+        button.connect('clicked', () => openGattuccino());
+        row.add_suffix(button);
+        more.add(row);
+        page.add(more);
+    }
+}
+
+// The window is a launcher in the app grid, put there by `gattuccino apply`
+function openGattuccino() {
+    try {
+        const app = Gio.DesktopAppInfo.new('org.gattuccino.Preferences.desktop');
+        if (!app)
+            throw new Error('it is not installed: run `gattuccino apply`');
+        app.launch([], null);
+    } catch (e) {
+        console.warn(`gattuccino: could not open the window: ${e.message}`);
     }
 }

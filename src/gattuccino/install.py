@@ -379,6 +379,41 @@ def _remove_show_apps_icon(desktop: Desktop, state) -> bool:
     return removed
 
 
+# --- The launcher of the window ----------------------------------------------
+
+LAUNCHER_ID = "org.gattuccino.Preferences"
+PROJECT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SCRIPT = os.path.join(PROJECT, "gattuccino")
+LAUNCHER_SOURCE = os.path.join(PROJECT, "data")
+
+
+def _launcher_files(desktop: Desktop):
+    """Where the launcher of the window and its icon go: it is in the app grid, and the
+    preferences of the extensions can open it."""
+    return (f"{desktop.applications_dir}/{LAUNCHER_ID}.desktop",
+            f"{desktop.icons_dir}/hicolor/scalable/apps/{LAUNCHER_ID}.svg")
+
+
+def _install_launcher(desktop: Desktop):
+    entry, icon = _launcher_files(desktop)
+    quoted = '"' + SCRIPT.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    with open(f"{LAUNCHER_SOURCE}/{LAUNCHER_ID}.desktop", encoding="utf-8") as f:
+        text = f.read().replace("@EXEC@", quoted)
+    os.makedirs(os.path.dirname(entry), exist_ok=True)
+    with open(entry, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.makedirs(os.path.dirname(icon), exist_ok=True)
+    shutil.copyfile(f"{LAUNCHER_SOURCE}/{LAUNCHER_ID}.svg", icon)
+    desktop.update_icon_cache(f"{desktop.icons_dir}/hicolor")
+
+
+def _remove_launcher(desktop: Desktop):
+    for path in _launcher_files(desktop):
+        if os.path.lexists(path):
+            os.remove(path)
+    desktop.update_icon_cache(f"{desktop.icons_dir}/hicolor")
+
+
 # --- Apply and uninstall -----------------------------------------------------
 
 def apply(preferences: Preferences, desktop: Desktop, log=print):
@@ -432,6 +467,7 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
             _remove_extension(desktop, uuid)
     # Into the settings of the extensions, where they take them at once
     live.push(desktop, preferences)
+    _install_launcher(desktop)
     # Clean up what an earlier version, under this project's old name, installed
     for uuid in (LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
@@ -454,6 +490,7 @@ def uninstall(desktop: Desktop, log=print):
     _close_flatpak(desktop, state)
     _remove_show_apps_icon(desktop, state)
     live.reset(desktop)
+    _remove_launcher(desktop)
     for uuid in (FLOATING_PANEL_UUID, ACCENT_UUID, BLUR_UUID, LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
     for path in (desktop.state_path,):

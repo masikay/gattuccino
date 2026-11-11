@@ -145,3 +145,11 @@ def reset(desktop: Desktop):
         args = schema_args(desktop, key)
         if args is not None:
             desktop.run("gsettings", *args, "reset-recursively", schema)
+
+
+def load(desktop: Desktop) -> prefs.Preferences:
+    """The preferences as they are now: the file, with the values the extensions
+    have in their settings, which may have been changed since in their own windows."""
+    preferences = prefs.load(desktop.preferences_path)
+    pull(desktop, preferences)
+    return preferences

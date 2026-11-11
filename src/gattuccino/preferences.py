@@ -194,7 +194,7 @@ BLUR_ONLY = ("blur_radius", "blur_background", "blur_background_radius")
 
 # --- How the preferences are shown by the terminal and the window ---------------
 
-SWITCH, CHOICE, TEXT = "switch", "choice", "text"
+SWITCH, CHOICE, TEXT, FILE = "switch", "choice", "text", "file"
 
 
 @dataclass(frozen=True)
@@ -207,6 +207,8 @@ class Field:
     choices: tuple = ()            # the words of a CHOICE; for a TEXT, the ones that are also allowed
     requires: Optional[str] = None  # shown only while this switch is on
     live: bool = False             # changes in the running extension, with no apply
+    number: Optional[tuple] = None  # a number to give: (minimum, maximum, step, digits)
+    words: tuple = ()              # the words that are allowed in place of a number
 
     @property
     def label(self) -> str:
@@ -234,6 +236,23 @@ _CHOICES = {
     "flavor": palette.DARK_FLAVORS,
     "accent": (FOLLOW, *palette.ACCENTS),
 }
+# The numbers, for a spin button: minimum, maximum, step and decimals; and the
+# words that stand in place of one (the first is what the preference starts as)
+_NUMBERS = {
+    "panel_opacity": (0, 1, 0.05, 2),
+    "popup_opacity": (0, 1, 0.05, 2),
+    "panel_gap": (0, 12, 1, 0),
+    "panel_radius": (0, 100, 1, 0),
+    "docked_panel_opacity": (0, 1, 0.05, 2),
+    "dock_radius": (0, 100, 1, 0),
+    "blur_radius": (0, 100, 1, 0),
+    "blur_background_radius": (0, 100, 1, 0),
+}
+_WORDS = {
+    "panel_radius": (ROUND,),
+    "docked_panel_opacity": ("same",),
+    "dock_radius": (DOCK, ROUND),
+}
 _REQUIRES = {name: "floating_panel" for name in FLOATING_ONLY} | {name: "blur" for name in BLUR_ONLY}
 # What the extensions change while they run: they read these from settings of
 # their own (see live.py), and the preferences window of an extension, the
@@ -252,10 +271,13 @@ def all_fields() -> list:
                 kind = CHOICE
             elif spec.values == "yes, no":
                 kind = SWITCH
+            elif name == "show_apps_icon":
+                kind = FILE
             else:
                 kind = TEXT
             result.append(Field(name, spec, group, kind, tuple(_CHOICES.get(name, ())),
-                                _REQUIRES.get(name), name in LIVE_NAMES))
+                                _REQUIRES.get(name), name in LIVE_NAMES,
+                                _NUMBERS.get(name), _WORDS.get(name, ())))
     return result
 
 

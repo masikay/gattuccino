@@ -111,14 +111,22 @@ export default class AccentPreferences extends ExtensionPreferences {
         });
         const button = new Gtk.Button({label: 'Open Gattuccino', valign: Gtk.Align.CENTER});
         button.connect('clicked', () => {
-            try {
-                Gio.AppInfo.create_from_commandline('gattuccino gui', 'Gattuccino', Gio.AppInfoCreateFlags.NONE).launch([], null);
-            } catch (e) {
-                console.warn(`gattuccino: could not open the window: ${e.message}`);
-            }
+            openGattuccino();
         });
         row.add_suffix(button);
         group.add(row);
         return group;
+    }
+}
+
+// The window is a launcher in the app grid, put there by `gattuccino apply`
+function openGattuccino() {
+    try {
+        const app = Gio.DesktopAppInfo.new('org.gattuccino.Preferences.desktop');
+        if (!app)
+            throw new Error('it is not installed: run `gattuccino apply`');
+        app.launch([], null);
+    } catch (e) {
+        console.warn(`gattuccino: could not open the window: ${e.message}`);
     }
 }

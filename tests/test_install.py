@@ -395,3 +395,28 @@ class LiveSettingsTest(unittest.TestCase):
             f.write("<svg/>")
         self.apply("--show-apps-icon", other)
         self.assertEqual(self.setting("show-apps-icon"), other)
+
+
+class LauncherTest(unittest.TestCase):
+    """The window is in the app grid once there is something installed to change."""
+
+    def setUp(self):
+        self.home = FakeHome()
+        self.addCleanup(self.home.close)
+        self.entry = f"{self.home.data}/applications/org.gattuccino.Preferences.desktop"
+        self.icon = f"{self.home.data}/icons/hicolor/scalable/apps/org.gattuccino.Preferences.svg"
+
+    def test_apply_puts_the_launcher_and_its_icon_where_the_app_grid_looks_and_uninstall_takes_them_away(self):
+        self.home.ok("configure", "--no-shell-theme", "--apply")
+        text = self.home.read(self.entry)
+        self.assertRegex(text, r'(?m)^Exec="[^"\n]*/gattuccino" gui$')
+        self.assertIn("Icon=org.gattuccino.Preferences", text)
+        self.assertNotIn("@EXEC@", text)
+        self.assertTrue(os.path.exists(self.icon))
+        # the script it starts is there
+        script = text.split('Exec="')[1].split('"')[0]
+        self.assertTrue(os.path.isfile(script))
+
+        self.home.ok("uninstall")
+        self.assertFalse(os.path.exists(self.entry))
+        self.assertFalse(os.path.exists(self.icon))
