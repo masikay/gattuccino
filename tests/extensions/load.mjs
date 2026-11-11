@@ -10,10 +10,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 export const extensionPath = uuid => resolve(here, '../../extensions', uuid, 'extension.js');
 
-export async function loadExtension(uuid, mocksFile) {
+export async function loadExtension(uuid, mocksFile, file = 'extension.js') {
     const mocks = pathToFileURL(resolve(here, mocksFile)).href;
     const names = [];
-    const source = readFileSync(extensionPath(uuid), 'utf8')
+    const source = readFileSync(resolve(here, '../../extensions', uuid, file), 'utf8')
         .replace(/^import (?:\* as )?(\w+|\{\w+\}) from '(?:gi|resource):\/\/[^']+';\n/gm, (_, name) => {
             names.push(name.replace(/[{}]/g, ''));
             return '';
