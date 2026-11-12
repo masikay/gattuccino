@@ -180,6 +180,8 @@ Latte and the dark flavor of the `flavor` preference are always installed togeth
 
 `apply` no longer sets the style itself: it builds and selects the flavor for the style you have picked.
 
+This is also why the accent swatches in *Settings > Appearance* can look inverted if you switch the style from inside Settings, over and over: the light accent colors with the dark style and the other way round. GTK 4 reads `~/.config/gtk-4.0/gtk.css` once, when an application starts, and does not read it again when it changes, nor the files it imports. The swatches take their colors from the flavor files, so a Settings window that was started in one style keeps that style's swatches after the style is switched, while libadwaita flips its own light and dark colors at once. Every application started afterwards, and Settings itself once it is restarted, has the right ones. Nothing is wrong with the files, and there is no way to have a running GTK 4 application follow them.
+
 Latte is built from GNOME Shell's light stylesheet, the dark flavors from its dark one. As in GNOME itself, the overview and on-screen displays stay dark in Latte; they use Latte's text color as their background.
 
 ## The floating bar
