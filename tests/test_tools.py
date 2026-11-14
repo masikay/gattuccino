@@ -2,17 +2,19 @@
 
 import json
 import os
+import plistlib
+import tempfile
 import unittest
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import btop, eza, fzf, ghostty, ptyxis
+from gattuccino.tools import bat, btop, eza, fzf, ghostty, ptyxis
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "gdbus", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gdbus", "systemctl")
 
 
 def read(path):
@@ -46,6 +48,20 @@ class RegistryTest(unittest.TestCase):
             colors = ptyxis.colors(flavor)
             self.assertEqual(sorted(k for k in colors if k.startswith("color")), sorted(f"color{n}" for n in range(16)))
             self.assertTrue({"background", "foreground", "cursor-color", "cursor-text"} <= set(colors), flavor)
+
+    def test_every_flavor_has_the_official_theme_of_bat(self):
+        for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
+            self.assertTrue(os.path.isfile(bat.theme_file(flavor)), flavor)
+
+    def test_an_xml_file_is_ours_by_the_line_after_its_declaration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = f"{folder}/theme.tmTheme"
+            with open(path, "w") as f:
+                f.write('<?xml version="1.0"?>\n<!-- gattuccino: bat theme -->\n<plist/>\n')
+            self.assertTrue(tools.is_ours(path))
+            with open(path, "w") as f:
+                f.write('<?xml version="1.0"?>\n<plist/>\n')
+            self.assertFalse(tools.is_ours(path))
 
     def test_every_flavor_has_the_official_theme_of_ghostty(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
@@ -240,6 +256,19 @@ class FzfTest(unittest.TestCase):
         self.assertIn("log out and back in", self.configure("--tool-fzf"))
         self.home.env["FZF_DEFAULT_OPTS_FILE"] = self.options              # after the login
         self.assertNotIn("log out and back in", self.configure("--tool-fzf"))
+
+    def test_a_shell_that_still_has_the_variable_does_not_find_a_file_missing_until_the_next_login(self):
+        # fzf stops with an error for an options file that is not there
+        self.configure("--tool-fzf")
+        self.home.env["FZF_DEFAULT_OPTS_FILE"] = self.options              # a shell of the session, after the login
+        self.configure("--no-tool-fzf")
+        self.assertTrue(os.path.exists(self.options))                      # kept, with nothing in it
+        self.assertNotIn("--color", self.home.read(self.options))
+        self.assertFalse(os.path.exists(self.environment))
+
+        del self.home.env["FZF_DEFAULT_OPTS_FILE"]                         # the next login
+        self.home.ok("sync")
+        self.assertFalse(os.path.exists(self.options))
 
     def test_systemd_is_asked_to_read_the_file_again_once_it_is_written_and_once_it_is_gone(self):
         # a user manager that was kept running (logging back in within ten seconds) never saw it
@@ -562,3 +591,89 @@ class PtyxisTest(unittest.TestCase):
         self.home.write_settings(store)
         self.configure("--tool-ptyxis")
         self.assertTrue(os.path.exists(self.palette))
+
+
+class BatTest(unittest.TestCase):
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.theme = f"{self.home.config}/bat/themes/gattuccino.tmTheme"
+        self.environment = f"{self.home.config}/environment.d/60-gattuccino-bat.conf"
+        for name in ("BAT_THEME", "BAT_CONFIG_PATH"):
+            self.home.env.pop(name, None)
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def builds(self):
+        return self.home.log().count("bat cache --build")
+
+    def test_the_theme_is_the_official_one_of_the_flavor_under_two_lines_that_say_whose_file_it_is(self):
+        # the light style is Latte
+        self.configure("--tool-bat")
+        text = self.home.read(self.theme)
+        lines = text.splitlines()
+        self.assertTrue(lines[0].startswith("<?xml"))
+        self.assertEqual(lines[1], "<!-- gattuccino: bat theme (flavor=latte, accent=teal) -->")
+        official = read(bat.theme_file("latte"))
+        self.assertTrue(text.endswith(official.partition("\n")[2]))        # all the rest, unchanged
+        with open(self.theme, "rb") as f:                                   # and bat can read it
+            data = plistlib.load(f)
+        self.assertEqual(data["name"], "Catppuccin Latte")
+        self.assertEqual(len(data["settings"]), 187)
+
+    def test_bat_is_told_to_use_it_by_the_environment_and_its_cache_is_built_once_per_change(self):
+        self.configure("--tool-bat")
+        self.assertIn("\nBAT_THEME=gattuccino\n", self.home.read(self.environment))
+        self.assertEqual(self.builds(), 1)
+        self.home.ok("sync")                                                # nothing changed: nothing to build
+        self.assertEqual(self.builds(), 1)
+
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")     # Latte for the light style, Mocha for dark
+        self.home.ok("sync")
+        self.assertIn("flavor=mocha", self.home.read(self.theme))
+        self.assertEqual(self.builds(), 2)
+
+    def test_the_configuration_of_a_person_is_not_touched(self):
+        repository = f"{self.home.home}/dotfiles"
+        os.makedirs(repository)
+        with open(f"{repository}/config", "w") as f:
+            f.write('--theme="Catppuccin Mocha"')
+        os.makedirs(f"{self.home.config}/bat")
+        os.symlink(f"{repository}/config", f"{self.home.config}/bat/config")
+        self.configure("--tool-bat")
+        self.configure("--no-tool-bat")
+        self.assertEqual(self.home.read(f"{repository}/config"), '--theme="Catppuccin Mocha"')
+        self.assertTrue(os.path.islink(f"{self.home.config}/bat/config"))
+
+    def test_turning_it_off_takes_the_theme_and_the_variable_away_and_builds_the_cache_again(self):
+        self.configure("--tool-bat")
+        self.configure("--no-tool-bat")
+        self.assertFalse(os.path.exists(self.theme))
+        self.assertFalse(os.path.exists(self.environment))
+        self.assertEqual(self.builds(), 2)
+
+    def test_shells_that_still_have_the_variable_keep_a_theme_to_find_until_the_next_login(self):
+        # bat warns about a theme it does not know, and the variable stays in a shell until it is started again
+        self.configure("--tool-bat")
+        self.home.env["BAT_THEME"] = "gattuccino"                           # a shell of the session, after the login
+        self.configure("--no-tool-bat")
+        self.assertTrue(os.path.exists(self.theme))
+        self.assertFalse(os.path.exists(self.environment))                  # but the next login will not have it
+
+        del self.home.env["BAT_THEME"]                                      # the next login
+        self.home.ok("sync")
+        self.assertFalse(os.path.exists(self.theme))
+
+    def test_it_says_to_log_in_again_and_when_a_variable_of_the_shell_wins(self):
+        self.assertIn("log out and back in", self.configure("--tool-bat"))
+        self.home.env["BAT_THEME"] = "gattuccino"
+        self.assertNotIn("BAT_THEME is", self.configure("--tool-bat"))
+        self.home.env["BAT_THEME"] = "Nord"
+        self.assertIn("BAT_THEME is 'Nord' in your shell, and wins", self.configure("--tool-bat"))
+
+    def test_uninstall_takes_everything_away(self):
+        self.configure("--tool-bat")
+        self.home.ok("uninstall")
+        self.assertFalse(os.path.exists(self.theme))
+        self.assertFalse(os.path.exists(self.environment))

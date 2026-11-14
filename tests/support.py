@@ -112,6 +112,13 @@ else:
     print("()")
 '''
 
+# bat, which only has to say what it was asked
+BAT = '''
+import os, sys
+with open(os.environ["FAKE_LOG"], "a") as log:
+    log.write("bat " + " ".join(sys.argv[1:]) + "\\n")
+'''
+
 # fzf, which says its version, as the test sets it
 FZF = 'import os\nprint(os.environ.get("FAKE_FZF_VERSION", "0.74.5") + " (test)")\n'
 
@@ -164,7 +171,7 @@ class FakeHome:
         open(self._files["log"], "w").close()
 
         scripts = {"gsettings": GSETTINGS, "gnome-extensions": GNOME_EXTENSIONS, "flatpak": FLATPAK, "gnome-shell": GNOME_SHELL,
-                   "glib-compile-schemas": GLIB_COMPILE_SCHEMAS, "fzf": FZF, "systemctl": SYSTEMCTL, "gdbus": GDBUS}
+                   "glib-compile-schemas": GLIB_COMPILE_SCHEMAS, "fzf": FZF, "systemctl": SYSTEMCTL, "gdbus": GDBUS, "bat": BAT}
         for name in commands:
             path = f"{self.bin}/{name}"
             with open(path, "w") as f:

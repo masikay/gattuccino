@@ -21,20 +21,13 @@ import os
 import re
 
 from .. import palette
-from . import DATA, Tool, header, is_ours, remove_managed, write_managed
+from . import (DATA, MARKER, Tool, header, is_ours, remove_environment, remove_managed, same_content,
+               write_environment, write_managed)
 
 THEMES = os.path.join(DATA, "fzf", "themes")
 VARIABLE = "FZF_DEFAULT_OPTS_FILE"
 FIRST_VERSION = (0, 58)
 ACCENT_KEYS = re.compile(r"\b(pointer|prompt):#[0-9A-Fa-f]{6}")
-
-
-def same_content(path: str, text: str) -> bool:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read() == text
-    except OSError:
-        return False
 
 
 def theme_file(flavor: str) -> str:
@@ -55,9 +48,6 @@ class Fzf(Tool):
     def options_path(self, desktop) -> str:
         return f"{desktop.config_dir}/fzf/gattuccino.rc"
 
-    def environment_path(self, desktop) -> str:
-        return f"{desktop.config_dir}/environment.d/60-gattuccino-fzf.conf"
-
     def version(self, desktop):
         result = desktop.run("fzf", "--version")
         match = re.match(r"(\d+)\.(\d+)", result.stdout.strip()) if result.returncode == 0 else None
@@ -74,11 +64,8 @@ class Fzf(Tool):
         path = self.options_path(desktop)
         write_managed(path, options, context.notes)
 
-        environment = self.environment_path(desktop)
-        text = header("fzf options file", context.flavor, context.accent) + f"{VARIABLE}={path}\n"
-        if not same_content(environment, text):
-            write_managed(environment, text, context.notes)
-            desktop.run("systemctl", "--user", "daemon-reload")   # a user manager that is still running reads it again
+        write_environment(context, "fzf", header("fzf options file", context.flavor, context.accent)
+                          + f"{VARIABLE}={path}\n")
         self.warn(context, path)
 
     def warn(self, context, path):
@@ -100,8 +87,14 @@ class Fzf(Tool):
                 "Take the colors out of it, or its line sourcing a Catppuccin theme, to let this one show.")
 
     def remove(self, context):
-        remove_managed(self.options_path(context.desktop))
-        environment = self.environment_path(context.desktop)
-        if is_ours(environment):
-            remove_managed(environment)
-            context.desktop.run("systemctl", "--user", "daemon-reload")
+        desktop = context.desktop
+        path = self.options_path(desktop)
+        remove_environment(context, "fzf")
+        if desktop.environment.get(VARIABLE) == path and is_ours(path):
+            # Shells that were started with the variable go on having it until the next login, and fzf
+            # refuses to run with an options file that is not there: it is left empty, and goes later
+            stub = f"{MARKER} fzf options file (off)\n# Nothing: the tool is off. This file goes at the next login.\n"
+            if not same_content(path, stub):
+                write_managed(path, stub, context.notes)
+        else:
+            remove_managed(path)

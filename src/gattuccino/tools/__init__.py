@@ -59,15 +59,51 @@ class Tool:
 
 # --- Files that are this project's ---------------------------------------------
 
+XML_MARKER = "<!-- gattuccino:"
+
+
 def is_ours(path: str) -> bool:
-    """Whether a file was written by this project: its first line says so. A symlink never is."""
+    """Whether a file was written by this project: a line at its top says so (the first, or the one
+    after the declaration of an XML file). A symlink never is."""
     if os.path.islink(path) or not os.path.isfile(path):
         return False
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            return f.readline().startswith(MARKER)
+            lines = [f.readline() for _ in range(3)]
     except OSError:
         return False
+    return lines[0].startswith(MARKER) or any(line.startswith(XML_MARKER) for line in lines[1:])
+
+
+def same_content(path: str, text: str) -> bool:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read() == text
+    except OSError:
+        return False
+
+
+# --- environment.d: a variable for every shell of the session ---------------------
+
+def environment_path(desktop, name: str) -> str:
+    return f"{desktop.config_dir}/environment.d/60-gattuccino-{name}.conf"
+
+
+def write_environment(context, name: str, text: str):
+    """Write a file of environment.d, which the session reads at login. systemd's user manager is kept
+    running when a person logs back in within ten seconds of logging out, and then never sees it, so it
+    is asked to read it again when the file changes."""
+    path = environment_path(context.desktop, name)
+    if not same_content(path, text):
+        write_managed(path, text, context.notes)
+        context.desktop.run("systemctl", "--user", "daemon-reload")
+
+
+def remove_environment(context, name: str):
+    path = environment_path(context.desktop, name)
+    if is_ours(path):
+        remove_managed(path)
+        context.desktop.run("systemctl", "--user", "daemon-reload")
 
 
 def header(what: str, flavor: str, accent: str, extra: str = "") -> str:
@@ -110,8 +146,8 @@ def remove_managed(path: str):
 # --- The registry --------------------------------------------------------------
 
 def all_tools() -> list:
-    from . import btop, eza, fzf, ghostty, ptyxis
-    return [btop.Btop(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty(), ptyxis.Ptyxis()]
+    from . import bat, btop, eza, fzf, ghostty, ptyxis
+    return [bat.Bat(), btop.Btop(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty(), ptyxis.Ptyxis()]
 
 
 def by_preference(name: str):
