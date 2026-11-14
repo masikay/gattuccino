@@ -5,13 +5,13 @@ import unittest
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import btop, eza, fzf
+from gattuccino.tools import btop, eza, fzf, ghostty
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "gdbus", "systemctl")
 
 
 def read(path):
@@ -39,6 +39,10 @@ class RegistryTest(unittest.TestCase):
     def test_every_flavor_has_the_official_theme_of_btop(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
             self.assertTrue(os.path.isfile(btop.theme_file(flavor)), flavor)
+
+    def test_every_flavor_has_the_official_theme_of_ghostty(self):
+        for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
+            self.assertTrue(os.path.isfile(ghostty.theme_file(flavor)), flavor)
 
     def test_every_flavor_has_the_official_theme_of_fzf(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
@@ -354,3 +358,112 @@ class BtopTest(unittest.TestCase):
         self.home.ok("uninstall")
         self.assertEqual(self.home.read(self.conf), self.CONF)
         self.assertFalse(os.path.exists(self.theme))
+
+
+class GhosttyTest(unittest.TestCase):
+    CONFIG = "theme = catppuccin-mocha.conf\nbackground-opacity = 0.9\nwindow-width = 120\n"
+
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.folder = f"{self.home.config}/ghostty"
+        self.config = f"{self.folder}/config.ghostty"
+        self.include = f"{self.folder}/gattuccino"
+        self.light, self.dark = f"{self.folder}/themes/gattuccino-light", f"{self.folder}/themes/gattuccino-dark"
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def put_config(self, text):
+        os.makedirs(self.folder, exist_ok=True)
+        with open(self.config, "w") as f:
+            f.write(text)
+
+    def test_only_the_cursor_takes_the_accent_and_all_the_rest_is_the_official_port(self):
+        theme = read(ghostty.theme_file("mocha"))
+        changed = ghostty.with_accent(theme, palette.color("mocha", "teal"))
+        self.assertIn("cursor-color = 94e2d5", changed)
+        words = lambda text: [line for line in text.splitlines() if not line.startswith("cursor-color")]  # noqa: E731
+        self.assertEqual(words(theme), words(changed))
+
+    def test_both_styles_are_written_at_once_for_ghostty_to_follow_the_desktop_by_itself(self):
+        # Latte for the light style, the dark flavor chosen for the dark one; the accent picked in Settings is teal
+        self.configure("--tool-ghostty", "--flavor", "frappe")
+        light, dark = self.home.read(self.light), self.home.read(self.dark)
+        self.assertTrue(light.startswith("# gattuccino: ghostty theme, light (flavor=latte, accent=teal)\n"))
+        self.assertTrue(dark.startswith("# gattuccino: ghostty theme, dark (flavor=frappe, accent=teal)\n"))
+        self.assertTrue(light.endswith(ghostty.with_accent(read(ghostty.theme_file("latte")),
+                                                           palette.color("latte", "teal"))))
+        self.assertTrue(dark.endswith(ghostty.with_accent(read(ghostty.theme_file("frappe")),
+                                                          palette.color("frappe", "teal"))))
+        self.assertIn("theme = light:gattuccino-light,dark:gattuccino-dark\n", self.home.read(self.include))
+
+    def test_a_configuration_is_made_when_there_is_none_and_taken_away_again(self):
+        self.configure("--tool-ghostty")
+        self.assertEqual(self.home.read(self.config).splitlines()[1], "config-file = ?gattuccino")
+        self.configure("--no-tool-ghostty")
+        for path in (self.config, self.include, self.light, self.dark):
+            self.assertFalse(os.path.exists(path), path)
+
+    def test_one_line_is_added_to_a_configuration_of_ones_own_and_only_that_is_taken_away(self):
+        self.put_config(self.CONFIG)
+        out = self.configure("--tool-ghostty")
+        self.assertIn("Your own `theme` in the configuration of Ghostty stays", out)
+        text = self.home.read(self.config)
+        self.assertTrue(text.startswith(self.CONFIG))                       # all of it is as it was
+        self.assertTrue(text.endswith("config-file = ?gattuccino\n"))
+
+        before = text
+        self.home.ok("sync")                                                # once, not every time
+        self.assertEqual(self.home.read(self.config), before)
+
+        self.configure("--no-tool-ghostty")
+        self.assertEqual(self.home.read(self.config), self.CONFIG)
+
+    def test_the_style_changes_nothing_but_the_accent_changes_the_cursor(self):
+        self.configure("--tool-ghostty")
+        before = (self.home.read(self.light), self.home.read(self.dark))
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
+        self.home.ok("sync")                                                # Ghostty follows the desktop itself
+        self.assertEqual((self.home.read(self.light), self.home.read(self.dark)), before)
+
+        self.home.set_setting(INTERFACE, "accent-color", "pink")
+        self.home.ok("sync")
+        self.assertIn(f"cursor-color = {palette.color('latte', 'pink').lstrip('#')}", self.home.read(self.light))
+        self.assertIn(f"cursor-color = {palette.color('mocha', 'pink').lstrip('#')}", self.home.read(self.dark))
+
+    def test_a_configuration_that_is_a_symlink_is_never_written_through(self):
+        repository = f"{self.home.home}/dotfiles"
+        os.makedirs(repository)
+        with open(f"{repository}/config.ghostty", "w") as f:
+            f.write(self.CONFIG)
+        os.makedirs(self.folder)
+        os.symlink(f"{repository}/config.ghostty", self.config)
+
+        out = self.configure("--tool-ghostty")
+        self.assertIn("is a symlink, so it is not edited", out)
+        self.assertIn("config-file = ?gattuccino", out)                     # what to put in it
+        self.assertEqual(self.home.read(f"{repository}/config.ghostty"), self.CONFIG)
+        self.assertTrue(os.path.exists(self.light))
+
+    def test_a_ghostty_that_is_running_is_asked_to_read_its_configuration_again_and_one_that_is_not_is_left_alone(self):
+        # asking one that is not there starts it, with no window: it is looked for first
+        self.configure("--tool-ghostty")
+        log = self.home.log()
+        self.assertIn("NameHasOwner", log)
+        self.assertNotIn("reload-config", log)
+
+        self.home.env["FAKE_GHOSTTY_RUNNING"] = "1"
+        self.home.ok("sync")                                                # nothing has changed: no call
+        self.assertNotIn("reload-config", self.home.log())
+        self.home.set_setting(INTERFACE, "accent-color", "pink")
+        self.home.ok("sync")
+        self.assertIn("org.gtk.Actions.Activate reload-config", self.home.log())
+
+    def test_uninstall_puts_everything_back(self):
+        self.put_config(self.CONFIG)
+        self.configure("--tool-ghostty")
+        self.home.ok("uninstall")
+        self.assertEqual(self.home.read(self.config), self.CONFIG)
+        for path in (self.include, self.light, self.dark):
+            self.assertFalse(os.path.exists(path), path)

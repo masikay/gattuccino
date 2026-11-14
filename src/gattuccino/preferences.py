@@ -194,6 +194,9 @@ SPECS = {
     "tool_fzf": Spec(_boolean, "yes, no",
                      "Theme fzf, the fuzzy finder, with Catppuccin; it follows the flavor and the accent "
                      "(its prompt and pointer)"),
+    "tool_ghostty": Spec(_boolean, "yes, no",
+                         "Theme Ghostty, the terminal, with Catppuccin, light and dark; it follows the flavor "
+                         "and the accent"),
     "shell_version": Spec(_shell_version, f"{AUTO}, or a version such as 49.2",
                           f"GNOME Shell version to build the theme for; '{AUTO}' detects it"),
 }
@@ -242,7 +245,7 @@ GROUPS = (
                  "docked_panel_opacity")),
     ("Dock", ("dock_like_panel", "dock_radius", "show_apps_icon")),
     ("Blur", ("blur", "blur_radius", "blur_background", "blur_background_radius")),
-    ("Tools", ("tool_btop", "tool_eza", "tool_fzf")),
+    ("Tools", ("tool_btop", "tool_eza", "tool_fzf", "tool_ghostty")),
     ("Install", ("shell_theme", "gtk_theme", "flatpak", "shell_version")),
 )
 _CHOICES = {
@@ -324,6 +327,7 @@ class Preferences:
     tool_btop: bool = False
     tool_eza: bool = False
     tool_fzf: bool = False
+    tool_ghostty: bool = False
     shell_version: str = AUTO
 
     def set(self, name: str, text: str):

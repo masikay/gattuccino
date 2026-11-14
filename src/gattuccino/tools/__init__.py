@@ -34,6 +34,7 @@ class Context:
     accent: str
     notes: list = field(default_factory=list)
     state: dict = field(default_factory=dict)   # what the tool has to remember, kept in the state file
+    dark_flavor: str = "mocha"                   # the flavor of the dark style, for a tool that has both at once
 
 
 class Tool:
@@ -109,8 +110,8 @@ def remove_managed(path: str):
 # --- The registry --------------------------------------------------------------
 
 def all_tools() -> list:
-    from . import btop, eza, fzf
-    return [btop.Btop(), eza.Eza(), fzf.Fzf()]
+    from . import btop, eza, fzf, ghostty
+    return [btop.Btop(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty()]
 
 
 def by_preference(name: str):
@@ -136,7 +137,7 @@ def sync(desktop, preferences, flavor: str, accent: str, notes: list, log=lambda
     state = {} if state is None else state
     written = []
     for tool in all_tools():
-        context = Context(desktop, flavor, accent, notes, _tool_state(state, tool))
+        context = Context(desktop, flavor, accent, notes, _tool_state(state, tool), preferences.flavor)
         if getattr(preferences, tool.preference):
             if not tool.installed(desktop):
                 notes.append(f"{tool.label} is not installed, so it is not themed.")

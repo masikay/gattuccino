@@ -100,6 +100,18 @@ with open(os.environ["FAKE_LOG"], "a") as log:
     log.write("systemctl " + " ".join(sys.argv[1:]) + "\\n")
 '''
 
+# gdbus, which says whether Ghostty is running as the test sets it, and what it was asked
+GDBUS = '''
+import os, sys
+args = sys.argv[1:]
+with open(os.environ["FAKE_LOG"], "a") as log:
+    log.write("gdbus " + " ".join(args) + "\\n")
+if any("NameHasOwner" in arg for arg in args):
+    print("(%s,)" % ("true" if os.environ.get("FAKE_GHOSTTY_RUNNING") else "false"))
+else:
+    print("()")
+'''
+
 # fzf, which says its version, as the test sets it
 FZF = 'import os\nprint(os.environ.get("FAKE_FZF_VERSION", "0.74.5") + " (test)")\n'
 
@@ -125,7 +137,7 @@ def test_sources():
 
 
 class FakeHome:
-    def __init__(self, user_themes="user", shell_version=SHELL_VERSION, commands=("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "systemctl")):
+    def __init__(self, user_themes="user", shell_version=SHELL_VERSION, commands=("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "systemctl", "gdbus")):
         self.root = tempfile.mkdtemp(prefix="gattuccino-home-")
         self.home = f"{self.root}/home"
         self.bin = f"{self.root}/bin"
@@ -152,7 +164,7 @@ class FakeHome:
         open(self._files["log"], "w").close()
 
         scripts = {"gsettings": GSETTINGS, "gnome-extensions": GNOME_EXTENSIONS, "flatpak": FLATPAK, "gnome-shell": GNOME_SHELL,
-                   "glib-compile-schemas": GLIB_COMPILE_SCHEMAS, "fzf": FZF, "systemctl": SYSTEMCTL}
+                   "glib-compile-schemas": GLIB_COMPILE_SCHEMAS, "fzf": FZF, "systemctl": SYSTEMCTL, "gdbus": GDBUS}
         for name in commands:
             path = f"{self.bin}/{name}"
             with open(path, "w") as f:
