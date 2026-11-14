@@ -24,6 +24,9 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 //   {flavor} stands for the flavor in use): the corners of the dock, and the
 //   icon of its Show Applications button, which follows the style as the
 //   theme is switched;
+// - the tools in a terminal (eza, ...): runs `gattuccino sync`, the command of
+//   the sync-command setting, whenever the style or the accent changes, so that
+//   they follow the flavor and the accent of the theme;
 // - the lock screen: the same for gattuccino-lock.css. The Shell runs the
 //   lock screen with its own stylesheet and not the theme's, so the accent
 //   there is a stylesheet of an extension too, which this one keeps loaded
@@ -165,6 +168,7 @@ export default class CatppuccinAccentExtension extends Extension {
         this._userThemeSettings = this._getUserThemeSettings();
         this._dockStylesheet = null;
         this._dockIdleId = 0;
+        this._toolsId = 0;
         // The settings of the dock, changed while this runs
         this._prefs = this.getSettings();
         this._prefsId = this._prefs.connect('changed', () => this._queueIcons());
@@ -206,6 +210,10 @@ export default class CatppuccinAccentExtension extends Extension {
             GLib.source_remove(this._dockIdleId);
             this._dockIdleId = 0;
         }
+        if (this._toolsId) {
+            GLib.source_remove(this._toolsId);
+            this._toolsId = 0;
+        }
         this._unloadDock();
         this._unloadDockIcon();
         this._prefs.disconnect(this._prefsId);
@@ -224,6 +232,32 @@ export default class CatppuccinAccentExtension extends Extension {
         this._syncShellTheme(picked, dark);
         this._syncGtk(picked, dark);
         this._queueDock();
+        this._queueTools();
+    }
+
+    // The tools in a terminal are themed by `gattuccino sync`, which reads the
+    // style and the accent for itself. It is asked once for however many changes
+    // there are in a moment: the accent and the style are often changed together.
+    _queueTools() {
+        if (this._toolsId)
+            return;
+        this._toolsId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 400, () => {
+            this._toolsId = 0;
+            this._runSync();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _runSync() {
+        const command = this._prefs?.get_string('sync-command');
+        if (!command)
+            return;
+        try {
+            Gio.Subprocess.new([command, 'sync'],
+                Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE);
+        } catch (e) {
+            console.warn(`${this.uuid}: could not run ${command} sync: ${e.message}`);
+        }
     }
 
     // The settings of the User Themes extension, found the way the extension

@@ -39,7 +39,7 @@ if not known:
 DEFAULTS = {
     "org.gnome.shell.extensions.gattuccino-blur": {"radius": 32, "background": True, "background-radius": 32},
     "org.gnome.shell.extensions.gattuccino-floating-panel": {"gap": 6, "radius": "round"},
-    "org.gnome.shell.extensions.gattuccino-accent": {"dock-radius": "dock", "show-apps-icon": ""},
+    "org.gnome.shell.extensions.gattuccino-accent": {"dock-radius": "dock", "show-apps-icon": "", "sync-command": ""},
 }
 if command == "list-keys":
     print("\n".join(store[schema]))
@@ -93,6 +93,9 @@ open(path, "w").write("\n".join(lines) + "\n")
 '''
 
 # glib-compile-schemas: all it has to do here is to leave the file that says it was done
+# A tool in a terminal, which only has to be there
+TOOL = 'print("tool 1.0")\n'
+
 GLIB_COMPILE_SCHEMAS = r'''
 import os, sys
 open(os.path.join(sys.argv[1], "gschemas.compiled"), "w").close()
@@ -131,7 +134,7 @@ class FakeHome:
             "org.gnome.shell.extensions.user-theme": {"name": "Yaru"},
             "org.gnome.shell.extensions.gattuccino-blur": {"radius": 32, "background": True, "background-radius": 32},
             "org.gnome.shell.extensions.gattuccino-floating-panel": {"gap": 6, "radius": "round"},
-            "org.gnome.shell.extensions.gattuccino-accent": {"dock-radius": "dock", "show-apps-icon": ""},
+            "org.gnome.shell.extensions.gattuccino-accent": {"dock-radius": "dock", "show-apps-icon": "", "sync-command": ""},
         })
         self.set_user_themes(user_themes)
         self.set_known_extensions([USER_THEME_UUID])
@@ -143,7 +146,7 @@ class FakeHome:
         for name in commands:
             path = f"{self.bin}/{name}"
             with open(path, "w") as f:
-                f.write(f"#!{sys.executable}\n" + textwrap.dedent(scripts[name]))
+                f.write(f"#!{sys.executable}\n" + textwrap.dedent(scripts.get(name, TOOL)))
             os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
         # git, sassc and the like still come from the real system
         self.env = dict(os.environ, HOME=self.home, PATH=f"{self.bin}:{os.environ['PATH']}",

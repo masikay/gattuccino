@@ -138,6 +138,21 @@ def push(desktop: Desktop, preferences: prefs.Preferences, only=None) -> list:
     return written
 
 
+ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
+
+
+def set_sync_command(desktop: Desktop, command: str) -> bool:
+    """What the catppuccin-accent extension runs when the style or the accent is changed in
+    Settings, to keep the tools in a terminal in step: the command `sync`, or nothing."""
+    args = schema_args(desktop, LIVE["dock_radius"])
+    if args is None:
+        return False
+    current = desktop.run("gsettings", *args, "get", ACCENT_SCHEMA, "sync-command")
+    if current.returncode == 0 and current.stdout.strip() == repr(command):
+        return True   # as it is: nothing to write
+    return desktop.run("gsettings", *args, "set", ACCENT_SCHEMA, "sync-command", repr(command)).returncode == 0
+
+
 def reset(desktop: Desktop):
     """Give the settings back their defaults, before the extensions that own them go."""
     for schema in sorted({key.schema for key in LIVE.values()}):

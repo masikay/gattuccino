@@ -8,7 +8,8 @@ export const settings = {
     'org.gnome.shell.extensions.user-theme': {name: ''},
 };
 // userThemes: 'user' (from extensions.gnome.org), 'system' (packaged) or false
-export const environment = {userThemes: 'user', failWrites: false, failLoads: false};
+export const environment = {userThemes: 'user', failWrites: false, failLoads: false, failSpawn: false};
+export const spawned = [];
 
 const USER_THEME_UUID = 'user-theme@gnome-shell-extensions.gcampax.github.com';
 export const USER_THEME_DIR = `/home/u/.local/share/gnome-shell/extensions/${USER_THEME_UUID}`;
@@ -79,6 +80,9 @@ const source = hasUserThemes => ({
 });
 export const Gio = {
     Settings, File, FileIcon, FileCreateFlags: {NONE: 0},
+    // What was started, for a test to look at
+    Subprocess: {new(argv) { if (environment.failSpawn) throw new Error('not found'); spawned.push(argv); return {}; }},
+    SubprocessFlags: {STDOUT_SILENCE: 4, STDERR_SILENCE: 8},
     SettingsSchemaSource: {
         get_default: () => source(environment.userThemes === 'system'),
         new_from_directory(path) {
@@ -91,6 +95,8 @@ export const GLib = {
     PRIORITY_DEFAULT: 0,
     SOURCE_REMOVE: false,
     idle_add(_priority, callback) { const id = ++idleNext; idle.set(id, callback); return id; },
+    // A timeout is run when the test lets the shell settle, as an idle call is
+    timeout_add(_priority, _ms, callback) { const id = ++idleNext; idle.set(id, callback); return id; },
     source_remove(id) { if (!idle.delete(id)) throw new Error('unknown source'); },
     build_filenamev: parts => parts.join('/'),
     get_home_dir: () => '/home/u',
@@ -162,7 +168,7 @@ export const prefs = {
     },
     disconnect(id) { if (!handlers.delete(id)) throw new Error('unknown handler'); },
 };
-export const resetPrefs = () => { prefs.values = {'dock-radius': 'dock', 'show-apps-icon': ''}; };
+export const resetPrefs = () => { prefs.values = {'dock-radius': 'dock', 'show-apps-icon': '', 'sync-command': ''}; };
 resetPrefs();
 export function setPref(key, value) {
     prefs.values[key] = value;

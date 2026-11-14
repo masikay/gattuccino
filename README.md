@@ -41,6 +41,7 @@ With the defaults you get Latte for the light style and Mocha for the dark style
 | `./gattuccino configure --flavor frappe --apply` | Change just the preferences given, and apply |
 | `./gattuccino apply` | Build and install what the preferences say; remove what they no longer ask for |
 | `./gattuccino gui` | Open the window with the preferences (also in the app grid, as *Gattuccino*, once `apply` has run) |
+| `./gattuccino sync` | Theme the tools in a terminal for the flavor and accent in use (the extension runs it when the style or the accent changes) |
 | `./gattuccino show` | Print the preferences |
 | `./gattuccino build --output FOLDER` | Build into a folder and change nothing else |
 | `./gattuccino uninstall` | Remove everything and put back the settings that were changed |
@@ -72,6 +73,7 @@ Seven of them change **while the extensions run**, with no `apply` and no login:
 | `--blur-radius` | `0` to `100` | `32` | How far the blur behind the top bar, menus and dock reaches, in pixels |
 | `--blur-background` / `--no-blur-background` | | on | Blur the wallpaper behind the overview and on the lock screen |
 | `--blur-background-radius` | `0` to `100` | `32` | How far the blur of that wallpaper reaches, in pixels (GNOME's own on the lock screen is 90) |
+| `--tool-eza` / `--no-tool-eza` | | off | Theme [eza](https://github.com/eza-community/eza) with Catppuccin; it follows the flavor and the accent |
 | `--shell-version` | `auto`, or a version | `auto` | GNOME Shell version to build the theme for |
 
 The accents are `rosewater`, `flamingo`, `pink`, `mauve`, `red`, `maroon`, `peach`, `yellow`, `green`, `teal`, `sky`, `sapphire`, `blue` and `lavender`.
@@ -113,6 +115,7 @@ Some examples:
 | Extension `floating-panel@gattuccino`, with its settings | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `floating-panel` are on |
 | Extension `blur@gattuccino`, with its settings | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `blur` are on |
 | `org.gattuccino.Preferences.desktop`, and its icon under `hicolor` | `~/.local/share/applications`, `~/.local/share/icons` | always |
+| `theme.yml` of eza | `$EZA_CONFIG_DIR`, or `~/.config/eza` | `tool-eza` is on |
 | Preferences, and a record of what was changed | `~/.config/gattuccino` | always |
 | The downloaded GNOME Shell stylesheets | `~/.cache/gattuccino` | `shell-theme` is on |
 
@@ -235,6 +238,30 @@ gnome-extensions disable blur@gattuccino
 ```
 
 This covers what [Blur my Shell](https://github.com/aunetx/blur-my-shell) is usually installed for, and does the same work as its dynamic blur, so it is not needed alongside this: a copy of what is behind each blurred surface is drawn and blurred on every frame it changes. It is work for the graphics card, so a weak machine may feel it; `--no-blur` takes it all away again.
+
+## Tools in a terminal
+
+Catppuccin for the tools you use in a terminal, which follow the flavor and the accent of the theme: the style picked in *Settings > Appearance* chooses Latte or your dark flavor, the accent follows the picker or stays the one you chose, and the tools change with them. Each tool is a preference of its own, `tool-NAME`, off by default: `configure` asks only about the tools it finds on the machine, and the window has a switch for each. They take effect at once, with no `apply`, and turning one off takes away what was written.
+
+What is written is marked as this project's (its first line says so), and a file of your own that was there is never lost: it is kept beside it as `NAME.before-gattuccino`, as it is, and put back when the tool is turned off or on `uninstall`. A symlink, say into a dotfiles repository, is moved aside as a link and never written through.
+
+When the style or the accent is changed, the `catppuccin-accent` extension runs `gattuccino sync`, which writes the theme of the flavor and accent in use for the tools that are wanted. It is told what to run by a setting of its own (`sync-command`), which is empty while no tool is wanted. Tools that are already running keep the colors they started with: a new run picks up the change.
+
+- **eza** reads `theme.yml` in its configuration folder (`$EZA_CONFIG_DIR`, or `~/.config/eza`). The themes are the ones of the [official Catppuccin port](https://github.com/catppuccin/eza), one for each flavor and accent, unchanged (they are in `data/tools/eza`, under their MIT license), and the one in use is copied in. eza has no other place to keep a theme, so one that you wrote is moved aside as above.
+
+  **`LS_COLORS` wins over the theme.** eza reads the `LS_COLORS` variable too, and gives it priority over `theme.yml`, kind by kind. Fedora sets it in every shell (`/etc/profile.d/colorls.sh`, with `di=01;34` and the like), so folders, symlinks and executables are drawn in plain ANSI colors, those of your terminal's palette, whatever the flavor and the accent. That includes the accent itself, which is the color of folders. `EZA_COLORS` does not get round it. `configure` says so when eza is turned on and `LS_COLORS` is set in your shell. To let the theme show, clear the variable for eza only, in your aliases:
+
+  ```sh
+  alias ls='LS_COLORS= eza --icons'
+  ```
+
+  or for every program started from the shell, in your shell's configuration, after the system's (`~/.zshrc`, or the file it sources your aliases from):
+
+  ```sh
+  unset LS_COLORS
+  ```
+
+  GNU `ls`, `fd` and the like then use their built-in colors, which for folders are the same bold blue. To keep them in the colors of your own choice instead, put a `~/.dircolors` there: Fedora reads it, at login, to build `LS_COLORS`, and eza then follows it and not its theme.
 
 ## Flatpak applications
 

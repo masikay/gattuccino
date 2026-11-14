@@ -3,7 +3,7 @@ import {test} from 'node:test';
 
 import {loadExtension} from './load.mjs';
 import {
-    USER_THEME_DIR, dock, environment, files, handlerCount, loadCalls, loaded, pendingIdle, pickAccent,
+    USER_THEME_DIR, dock, environment, files, spawned, handlerCount, loadCalls, loaded, pendingIdle, pickAccent,
     pickStyle, replaceTheme, resetLoadCalls, resetPrefs, setPref, settle,
     settings, switchTheme, written,
 } from './catppuccin-accent.mocks.mjs';
@@ -318,6 +318,34 @@ test('catppuccin accent', async t => {
         settle();
         assert.equal(background.style, '');
         assert.ok(container);
+    });
+
+    // The tools in a terminal are themed by `gattuccino sync`, which reads the
+    // style and the accent for itself: the extension only has to say when
+    await t.test('runs gattuccino sync, once, when the style or the accent is changed', () => {
+        spawned.length = 0;
+        setPref('sync-command', '/home/u/gattuccino/gattuccino');
+        pickAccent('pink');
+        pickStyle('default');                         // changed together, as they often are
+        settle();
+        assert.deepEqual(spawned, [['/home/u/gattuccino/gattuccino', 'sync']]);
+
+        pickStyle('prefer-dark');
+        settle();
+        assert.equal(spawned.length, 2);
+
+        // nothing to run while no tool is wanted, and a command that cannot be run is only said
+        setPref('sync-command', '');
+        pickAccent('blue');
+        settle();
+        assert.equal(spawned.length, 2);
+        setPref('sync-command', '/nonexistent');
+        environment.failSpawn = true;
+        pickAccent('teal');
+        settle();
+        environment.failSpawn = false;
+        assert.equal(spawned.length, 2);
+        setPref('sync-command', '');
     });
 
     await t.test('loads the accent rules for the dock that come with the theme', () => {

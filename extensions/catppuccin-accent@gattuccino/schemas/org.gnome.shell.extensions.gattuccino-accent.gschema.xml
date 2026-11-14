@@ -12,5 +12,10 @@
       <summary>Show Applications icon</summary>
       <description>The icon of the Show Applications button of the dock. Empty is the icon of the flavor in use that comes with the extension, 'gnome' keeps the icon GNOME draws, and an .svg or .png file is that file, with {flavor} in its name standing for the flavor in use.</description>
     </key>
+    <key name="sync-command" type="s">
+      <default>''</default>
+      <summary>Command that keeps the tools in a terminal in step</summary>
+      <description>The path of the gattuccino command. It is run with `sync` whenever the style or the accent color is changed in Settings, to theme the tools in a terminal for the flavor and accent in use. It is put there by gattuccino, and is empty while no tool is wanted.</description>
+    </key>
   </schema>
 </schemalist>

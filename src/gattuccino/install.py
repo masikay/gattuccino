@@ -12,7 +12,7 @@ import os
 import shutil
 import time
 
-from . import gtk_theme, live, palette, shell_theme, sources
+from . import gtk_theme, live, palette, shell_theme, sources, tools
 from .desktop import INTERFACE_SCHEMA, USER_THEME_SCHEMA, USER_THEME_UUID, Desktop
 from .preferences import AUTO, Preferences
 
@@ -375,6 +375,20 @@ def _remove_show_apps_icon(desktop: Desktop, state) -> bool:
     return removed
 
 
+# --- Tools in a terminal -----------------------------------------------------
+
+def sync_tools(preferences: Preferences, desktop: Desktop, log=print) -> list:
+    """Theme the tools that are wanted for the flavor and accent in use, and take away
+    the others'. Run by apply, by configure, and by the extension when the style or the
+    accent is changed in Settings. Returns the notes."""
+    notes = []
+    tools.sync(desktop, preferences, current_flavor(preferences, desktop), current_accent(preferences, desktop),
+               notes, log)
+    # The extension runs this only while there is something to do
+    live.set_sync_command(desktop, SCRIPT if tools.wanted(preferences) else "")
+    return notes
+
+
 # --- The launcher of the window ----------------------------------------------
 
 LAUNCHER_ID = "org.gattuccino.Preferences"
@@ -464,6 +478,7 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
     # Into the settings of the extensions, where they take them at once
     live.push(desktop, preferences)
     _install_launcher(desktop)
+    notes += sync_tools(preferences, desktop, log)
     # Clean up what an earlier version, under this project's old name, installed
     for uuid in (LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
@@ -487,6 +502,7 @@ def uninstall(desktop: Desktop, log=print):
     _remove_show_apps_icon(desktop, state)
     live.reset(desktop)
     _remove_launcher(desktop)
+    tools.remove_all(desktop)
     for uuid in (FLOATING_PANEL_UUID, ACCENT_UUID, BLUR_UUID, LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
     for path in (desktop.state_path,):

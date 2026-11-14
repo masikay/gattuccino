@@ -13,7 +13,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from . import preferences as prefs  # noqa: E402
+from . import preferences as prefs, tools  # noqa: E402
 from .controller import ERRORS, Controller  # noqa: E402
 from .desktop import Desktop  # noqa: E402
 
@@ -118,6 +118,10 @@ class PreferencesWindow(Adw.ApplicationWindow):
     def switch_row(self, field):
         row = Adw.SwitchRow()
         self._title(row, field)
+        # A tool that is not on the machine can be wanted, and is themed once it is
+        tool = tools.by_preference(field.name)
+        if tool is not None and not tool.installed(self.controller.desktop):
+            row.set_subtitle(f"{field.spec.help} (not installed)")
         row.set_active(bool(getattr(self.controller.preferences, field.name)))
         row.connect("notify::active", lambda r, _p: self.change(field, row, "yes" if r.get_active() else "no"))
         return row

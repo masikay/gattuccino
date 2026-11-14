@@ -186,6 +186,9 @@ SPECS = {
                             "they keep what GNOME gives them"),
     "blur_background_radius": Spec(_pixels(100), "0 to 100",
                                    "How far the blur of that wallpaper reaches, in pixels"),
+    "tool_eza": Spec(_boolean, "yes, no",
+                     "Theme eza, the ls replacement, with Catppuccin in its theme.yml; it follows the flavor "
+                     "and the accent"),
     "shell_version": Spec(_shell_version, f"{AUTO}, or a version such as 49.2",
                           f"GNOME Shell version to build the theme for; '{AUTO}' detects it"),
 }
@@ -210,7 +213,7 @@ class Field:
     kind: str                      # SWITCH, CHOICE or TEXT
     choices: tuple = ()            # the words of a CHOICE; for a TEXT, the ones that are also allowed
     requires: Optional[str] = None  # shown only while this switch is on
-    live: bool = False             # changes in the running extension, with no apply
+    live: bool = False             # takes effect at once, with no apply: in the running extension, or a tool in a terminal
     number: Optional[tuple] = None  # a number to give: (minimum, maximum, step, digits)
     words: tuple = ()              # the words that are allowed in place of a number
 
@@ -234,6 +237,7 @@ GROUPS = (
                  "docked_panel_opacity")),
     ("Dock", ("dock_like_panel", "dock_radius", "show_apps_icon")),
     ("Blur", ("blur", "blur_radius", "blur_background", "blur_background_radius")),
+    ("Tools", ("tool_eza",)),
     ("Install", ("shell_theme", "gtk_theme", "flatpak", "shell_version")),
 )
 _CHOICES = {
@@ -281,7 +285,7 @@ def all_fields() -> list:
             else:
                 kind = TEXT
             result.append(Field(name, spec, group, kind, tuple(_CHOICES.get(name, ())),
-                                _REQUIRES.get(name), name in LIVE_NAMES,
+                                _REQUIRES.get(name), name in LIVE_NAMES or name.startswith("tool_"),
                                 _NUMBERS.get(name), _WORDS.get(name, ())))
     return result
 
@@ -312,6 +316,7 @@ class Preferences:
     blur_radius: int = 32
     blur_background: bool = True
     blur_background_radius: int = 32
+    tool_eza: bool = False
     shell_version: str = AUTO
 
     def set(self, name: str, text: str):

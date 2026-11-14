@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from . import install, live, preferences as prefs, shell_theme, sources
+from . import install, live, preferences as prefs, shell_theme, sources, tools
 from .desktop import Desktop
 
 ERRORS = (prefs.PreferenceError, install.InstallError, shell_theme.BuildError, sources.SourcesError)
@@ -42,13 +42,16 @@ def _show(preferences, desktop, out=print):
     out(f"\nStored in {desktop.preferences_path}")
 
 
-def _ask(preferences):
+def _ask(preferences, desktop):
     """Ask for every preference in turn; Enter keeps the current value."""
     print("Press Enter to keep the value in [brackets].\n")
     for name, spec in prefs.SPECS.items():
         if name in prefs.FLOATING_ONLY and not preferences.floating_panel:
             continue
         if name in prefs.BLUR_ONLY and not preferences.blur:
+            continue
+        # Only the tools that are on the machine are worth asking about
+        if not tools.installed(name, desktop):
             continue
         while True:
             try:
@@ -82,15 +85,18 @@ def _configure(args, desktop):
             preferences.set(name, ("yes" if value else "no") if isinstance(value, bool) else value)
         apply_now = args.apply
     elif sys.stdin.isatty():
-        _ask(preferences)
+        _ask(preferences, desktop)
         apply_now = args.apply or None  # ask below
     else:
         raise prefs.PreferenceError("nothing to change: give options (see `configure --help`), "
                                     "or run it in a terminal to be asked")
 
     prefs.save(preferences, desktop.preferences_path)
-    # The ones the extensions change while they run take effect now, apply or not
+    # The ones the extensions change while they run take effect now, apply or not,
+    # and so do the tools in a terminal, which are themed or not at once
     live.push(desktop, preferences)
+    for note in install.sync_tools(preferences, desktop):
+        print(f"Note: {note}")
     _show(preferences, desktop)
     if apply_now is None:
         print()
@@ -145,6 +151,11 @@ def main(argv=None) -> int:
                         description="Builds the shell theme for your GNOME Shell version and installs "
                                     "everything the preferences ask for; removes what they no longer ask for.")
     commands.add_parser("show", help="print the preferences")
+    commands.add_parser("sync", help="theme the tools in a terminal for the flavor and accent in use",
+                        description="Writes the Catppuccin theme of the flavor and accent in use for each tool "
+                                    "that is wanted (see `configure`), and takes away the others'. It is run by "
+                                    "the catppuccin-accent extension whenever the style or the accent is "
+                                    "changed in Settings.")
     commands.add_parser("gui", help="open the window with the preferences",
                         description="Opens a window with the preferences, to change them once the theme is "
                                     "installed. The ones the extensions change while they run take effect "
@@ -166,6 +177,9 @@ def main(argv=None) -> int:
             install.apply(live.load(desktop), desktop)
         elif args.command == "gui":
             return _gui()
+        elif args.command == "sync":
+            for note in install.sync_tools(live.load(desktop), desktop):
+                print(f"Note: {note}")
         elif args.command == "show":
             _show(live.load(desktop), desktop)
         elif args.command == "build":

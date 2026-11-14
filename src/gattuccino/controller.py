@@ -7,7 +7,7 @@ wait for `apply`, which builds the theme and installs what the preferences say.
 
 import copy
 
-from . import install, live, preferences as prefs, shell_theme, sources
+from . import install, live, preferences as prefs, shell_theme, sources, tools
 from .desktop import Desktop
 
 ERRORS = (prefs.PreferenceError, install.InstallError, shell_theme.BuildError, sources.SourcesError)
@@ -19,6 +19,7 @@ class Controller:
         self.fields = prefs.all_fields()
         self.preferences = live.load(desktop)
         self.pending = set()   # what is built into the theme and was changed since the last apply
+        self.notes = []        # what the last change had to say, for a toast
 
     def text(self, name: str) -> str:
         return self.preferences.text(name)
@@ -39,6 +40,9 @@ class Controller:
         prefs.save(self.preferences, self.desktop.preferences_path)
         if name in prefs.LIVE_NAMES:
             live.push(self.desktop, self.preferences, only={name})
+        elif name in tools.preference_names():
+            # A tool in a terminal is themed, or not, at once: that is all it takes
+            self.notes = install.sync_tools(self.preferences, self.desktop, log=lambda _line: None)
         else:
             self.pending.add(name)
         return None
