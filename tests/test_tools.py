@@ -3,18 +3,22 @@
 import json
 import os
 import plistlib
+import re
+import shutil
+import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ElementTree
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import bat, btop, eza, fzf, ghostty, ptyxis
+from gattuccino.tools import bat, btop, eza, fzf, ghostty, gnome_text_editor, ptyxis
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gdbus", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gnome-text-editor", "gdbus", "systemctl")
 
 
 def read(path):
@@ -62,6 +66,10 @@ class RegistryTest(unittest.TestCase):
             with open(path, "w") as f:
                 f.write('<?xml version="1.0"?>\n<plist/>\n')
             self.assertFalse(tools.is_ours(path))
+
+    def test_every_flavor_has_the_official_scheme_of_gnome_text_editor(self):
+        for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
+            self.assertTrue(os.path.isfile(gnome_text_editor.theme_file(flavor)), flavor)
 
     def test_every_flavor_has_the_official_theme_of_ghostty(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
@@ -677,3 +685,99 @@ class BatTest(unittest.TestCase):
         self.home.ok("uninstall")
         self.assertFalse(os.path.exists(self.theme))
         self.assertFalse(os.path.exists(self.environment))
+
+
+class GnomeTextEditorTest(unittest.TestCase):
+    SCHEMA = "org.gnome.TextEditor"
+
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        store = json.loads(self.home.read(self.home._files["gsettings.json"]))
+        store[self.SCHEMA] = {"style-scheme": "Adwaita", "style-variant": "follow"}
+        self.home.write_settings(store)
+        folder = f"{self.home.data}/gtksourceview-5/styles"
+        self.light, self.dark = f"{folder}/gattuccino.xml", f"{folder}/gattuccino-dark.xml"
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def scheme(self):
+        return self.home.settings(self.SCHEMA, "style-scheme")
+
+    def test_there_are_two_schemes_that_name_each_other_as_their_variant(self):
+        self.configure("--tool-gnome-text-editor", "--flavor", "macchiato")
+        light, dark = ElementTree.parse(self.light).getroot(), ElementTree.parse(self.dark).getroot()
+        self.assertEqual((light.get("id"), light.get("name")), ("gattuccino", "Gattuccino"))
+        self.assertEqual((dark.get("id"), dark.get("name")), ("gattuccino-dark", "Gattuccino Dark"))
+        props = lambda root: {p.get("name"): p.text for p in root.find("metadata")}  # noqa: E731
+        self.assertEqual(props(light), {"variant": "light", "dark-variant": "gattuccino-dark"})
+        self.assertEqual(props(dark), {"variant": "dark", "light-variant": "gattuccino"})
+        # Latte for the light one and the dark flavor chosen for the dark one
+        color = lambda root, name: next(c.get("value") for c in root.findall("color") if c.get("name") == name)  # noqa: E731
+        self.assertEqual(color(light, "base"), palette.color("latte", "base").lower())
+        self.assertEqual(color(dark, "base"), palette.color("macchiato", "base").lower())
+        self.assertTrue(self.home.read(self.light).splitlines()[1].startswith("<!-- gattuccino: gnome-text-editor scheme"))
+
+    def test_the_accent_is_the_cursor_and_the_current_line_number_and_all_the_rest_is_the_official_port(self):
+        theme = read(gnome_text_editor.theme_file("mocha"))
+        changed = gnome_text_editor.scheme_text("mocha", "teal", dark=True)
+        self.assertIn('<style name="cursor"                      foreground="teal"/>', changed)
+        self.assertRegex(changed, r'<style name="current-line-number"\s+background="surface0" foreground="teal"')
+        # the lines of the official file that are not here: its own id, and the two accent lines
+        official = set(theme.splitlines())
+        ours = set(changed.splitlines())
+        gone = official - ours
+        self.assertEqual(len(gone), 3, gone)                               # the scheme line, the cursor, the line number
+        self.assertTrue(any("style-scheme id=" in line for line in gone))
+        self.assertTrue(any('name="cursor"' in line for line in gone))
+        self.assertTrue(any('name="current-line-number"' in line for line in gone))
+
+    @unittest.skipUnless(shutil.which("xmllint") and os.path.exists("/usr/share/gtksourceview-5/styles/styles.rng"),
+                         "no xmllint, or no schema of GtkSourceView")
+    def test_the_schemes_are_valid_for_gtksourceview(self):
+        # its schema does not know the metadata that its own schemes use for their variants: all the rest is checked
+        for flavor, dark in (("latte", False), ("mocha", True)):
+            text = re.sub(r"\s*<metadata>.*?</metadata>", "", gnome_text_editor.scheme_text(flavor, "teal", dark))
+            with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f:
+                f.write(text)
+            self.addCleanup(os.remove, f.name)
+            result = subprocess.run(["xmllint", "--noout", "--relaxng", "/usr/share/gtksourceview-5/styles/styles.rng",
+                                     f.name], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_editor_is_pointed_at_the_light_one_and_gets_back_what_it_had(self):
+        self.configure("--tool-gnome-text-editor")
+        self.assertEqual(self.scheme(), "gattuccino")
+        self.home.ok("sync")                                                # again: what it had is not lost
+        self.configure("--no-tool-gnome-text-editor")
+        self.assertEqual(self.scheme(), "Adwaita")
+        for path in (self.light, self.dark):
+            self.assertFalse(os.path.exists(path), path)
+
+    def test_a_scheme_chosen_by_hand_since_is_left_alone_when_it_is_turned_off(self):
+        self.configure("--tool-gnome-text-editor")
+        self.home.set_setting(self.SCHEMA, "style-scheme", "Builder")
+        self.configure("--no-tool-gnome-text-editor")
+        self.assertEqual(self.scheme(), "Builder")
+
+    def test_it_follows_the_accent(self):
+        self.configure("--tool-gnome-text-editor")
+        self.home.set_setting(INTERFACE, "accent-color", "pink")
+        self.home.ok("sync")
+        self.assertIn('foreground="pink"/>', self.home.read(self.dark))
+        self.assertIn('name="cursor"                      foreground="pink"', self.home.read(self.light))
+
+    def test_it_says_when_the_editor_is_kept_in_one_style(self):
+        self.home.set_setting(self.SCHEMA, "style-variant", "dark")
+        out = self.configure("--tool-gnome-text-editor")
+        self.assertIn("GNOME Text Editor is set to stay dark", out)
+        self.home.set_setting(self.SCHEMA, "style-variant", "follow")
+        self.assertNotIn("is set to stay", self.configure("--tool-gnome-text-editor"))
+
+    def test_uninstall_puts_everything_back(self):
+        self.configure("--tool-gnome-text-editor")
+        self.home.ok("uninstall")
+        self.assertEqual(self.scheme(), "Adwaita")
+        for path in (self.light, self.dark):
+            self.assertFalse(os.path.exists(path), path)
