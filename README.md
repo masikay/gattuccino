@@ -74,6 +74,7 @@ Seven of them change **while the extensions run**, with no `apply` and no login:
 | `--blur-background` / `--no-blur-background` | | on | Blur the wallpaper behind the overview and on the lock screen |
 | `--blur-background-radius` | `0` to `100` | `32` | How far the blur of that wallpaper reaches, in pixels (GNOME's own on the lock screen is 90) |
 | `--tool-fzf` / `--no-tool-fzf` | | off | Theme [fzf](https://github.com/junegunn/fzf) with Catppuccin; it follows the flavor and the accent |
+| `--tool-btop` / `--no-tool-btop` | | off | Theme [btop](https://github.com/aristocratos/btop) with Catppuccin; it follows the flavor and the accent |
 | `--tool-eza` / `--no-tool-eza` | | off | Theme [eza](https://github.com/eza-community/eza) with Catppuccin; it follows the flavor and the accent |
 | `--shell-version` | `auto`, or a version | `auto` | GNOME Shell version to build the theme for |
 
@@ -116,6 +117,7 @@ Some examples:
 | Extension `floating-panel@gattuccino`, with its settings | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `floating-panel` are on |
 | Extension `blur@gattuccino`, with its settings | `~/.local/share/gnome-shell/extensions` | `shell-theme` and `blur` are on |
 | `org.gattuccino.Preferences.desktop`, and its icon under `hicolor` | `~/.local/share/applications`, `~/.local/share/icons` | always |
+| `gattuccino.theme` of btop, and its `color_theme` line in `btop.conf` | `~/.config/btop` | `tool-btop` is on |
 | `theme.yml` of eza | `$EZA_CONFIG_DIR`, or `~/.config/eza` | `tool-eza` is on |
 | `gattuccino.rc` of fzf, and `60-gattuccino-fzf.conf` | `~/.config/fzf`, `~/.config/environment.d` | `tool-fzf` is on |
 | Preferences, and a record of what was changed | `~/.config/gattuccino` | always |
@@ -249,6 +251,7 @@ What is written is marked as this project's (its first line says so), and a file
 
 When the style or the accent is changed, the `catppuccin-accent` extension runs `gattuccino sync`, which writes the theme of the flavor and accent in use for the tools that are wanted. It is told what to run by a setting of its own (`sync-command`), which is empty while no tool is wanted. Tools that are already running keep the colors they started with: a new run picks up the change.
 
+- **btop** reads a theme by name from `btop.conf`, among the files of `themes` in its configuration folder (`~/.config/btop`). The themes are the ones of the [official Catppuccin port](https://github.com/catppuccin/btop), one for each flavor, unchanged (they are in `data/tools/btop`, under their MIT license). The port has no accent, so `hi_fg` (the keys that are highlighted) and `selected_fg` (the selected line), where it has blue, take the accent in use. The theme in use is written to `themes/gattuccino.theme`, and btop is made to ask for it by that name. `btop.conf` is btop's own file, which holds all your settings and which btop writes back whenever one is changed, so only its `color_theme` line is touched: the value it had is remembered (in `~/.config/gattuccino/state.json`) and put back when the tool is turned off or on `uninstall`, and a `btop.conf` that has no such line gets one, and loses it again. `configure` says what the line was. A `btop.conf` that is a symlink, into a dotfiles repository say, is never written through: the theme is written all the same, and you are told to put `color_theme = "gattuccino"` in the file it points to. A btop that is already running keeps the colors it started with.
 - **eza** reads `theme.yml` in its configuration folder (`$EZA_CONFIG_DIR`, or `~/.config/eza`). The themes are the ones of the [official Catppuccin port](https://github.com/catppuccin/eza), one for each flavor and accent, unchanged (they are in `data/tools/eza`, under their MIT license), and the one in use is copied in. eza has no other place to keep a theme, so one that you wrote is moved aside as above.
 
   **`LS_COLORS` wins over the theme.** eza reads the `LS_COLORS` variable too, and gives it priority over `theme.yml`, kind by kind. Fedora sets it in every shell (`/etc/profile.d/colorls.sh`, with `di=01;34` and the like), so folders, symlinks and executables are drawn in plain ANSI colors, those of your terminal's palette, whatever the flavor and the accent. That includes the accent itself, which is the color of folders. `EZA_COLORS` does not get round it. `configure` says so when eza is turned on and `LS_COLORS` is set in your shell. To let the theme show, clear the variable for eza only, in your aliases:

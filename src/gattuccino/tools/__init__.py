@@ -33,6 +33,7 @@ class Context:
     flavor: str
     accent: str
     notes: list = field(default_factory=list)
+    state: dict = field(default_factory=dict)   # what the tool has to remember, kept in the state file
 
 
 class Tool:
@@ -108,8 +109,8 @@ def remove_managed(path: str):
 # --- The registry --------------------------------------------------------------
 
 def all_tools() -> list:
-    from . import eza, fzf
-    return [eza.Eza(), fzf.Fzf()]
+    from . import btop, eza, fzf
+    return [btop.Btop(), eza.Eza(), fzf.Fzf()]
 
 
 def by_preference(name: str):
@@ -126,11 +127,16 @@ def installed(name: str, desktop) -> bool:
     return True if tool is None else tool.installed(desktop)
 
 
-def sync(desktop, preferences, flavor: str, accent: str, notes: list, log=lambda _line: None) -> list:
+def _tool_state(state: dict, tool) -> dict:
+    return state.setdefault("tools", {}).setdefault(tool.name, {})
+
+
+def sync(desktop, preferences, flavor: str, accent: str, notes: list, log=lambda _line: None, state=None) -> list:
     """Write the theme of each tool that is wanted, and take away the others'. Returns the names written."""
-    context = Context(desktop, flavor, accent, notes)
+    state = {} if state is None else state
     written = []
     for tool in all_tools():
+        context = Context(desktop, flavor, accent, notes, _tool_state(state, tool))
         if getattr(preferences, tool.preference):
             if not tool.installed(desktop):
                 notes.append(f"{tool.label} is not installed, so it is not themed.")
@@ -144,10 +150,10 @@ def sync(desktop, preferences, flavor: str, accent: str, notes: list, log=lambda
     return written
 
 
-def remove_all(desktop):
-    context = Context(desktop, "", "")
+def remove_all(desktop, state=None):
+    state = {} if state is None else state
     for tool in all_tools():
-        tool.remove(context)
+        tool.remove(Context(desktop, "", "", [], _tool_state(state, tool)))
 
 
 def wanted(preferences) -> bool:

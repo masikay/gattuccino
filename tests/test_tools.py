@@ -5,13 +5,13 @@ import unittest
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import eza, fzf
+from gattuccino.tools import btop, eza, fzf
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "systemctl")
 
 
 def read(path):
@@ -35,6 +35,10 @@ class RegistryTest(unittest.TestCase):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
             for accent in palette.ACCENTS:
                 self.assertTrue(os.path.isfile(eza.theme_file(flavor, accent)), (flavor, accent))
+
+    def test_every_flavor_has_the_official_theme_of_btop(self):
+        for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
+            self.assertTrue(os.path.isfile(btop.theme_file(flavor)), flavor)
 
     def test_every_flavor_has_the_official_theme_of_fzf(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
@@ -249,3 +253,104 @@ class FzfTest(unittest.TestCase):
         self.assertIn("older than 0.58", self.configure("--tool-fzf"))
         self.home.env["FAKE_FZF_VERSION"] = "0.58.0"
         self.assertNotIn("older than 0.58", self.configure("--tool-fzf"))
+
+
+class BtopTest(unittest.TestCase):
+    CONF = (
+        '#? Config file for btop v.1.4.7\n\n#* Name of a theme\n'
+        'color_theme = "/home/u/.config/btop/themes/catppuccin_mocha.theme"\n\ntheme_background = true\n'
+        'truecolor = true\n')
+
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.theme = f"{self.home.config}/btop/themes/gattuccino.theme"
+        self.conf = f"{self.home.config}/btop/btop.conf"
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def put_conf(self, text):
+        os.makedirs(os.path.dirname(self.conf), exist_ok=True)
+        with open(self.conf, "w") as f:
+            f.write(text)
+
+    def test_the_accent_is_the_highlighted_keys_and_the_selected_line_and_all_the_rest_is_the_official_port(self):
+        theme = read(btop.theme_file("mocha"))
+        changed = btop.with_accent(theme, palette.color("mocha", "teal"))
+        self.assertIn('theme[hi_fg]="#94e2d5"', changed)
+        self.assertIn('theme[selected_fg]="#94e2d5"', changed)
+        before = [line for line in theme.splitlines() if "hi_fg" not in line and "selected_fg" not in line]
+        after = [line for line in changed.splitlines() if "hi_fg" not in line and "selected_fg" not in line]
+        self.assertEqual(before, after)
+
+    def test_it_writes_the_theme_and_makes_a_btop_conf_that_asks_for_it_when_there_is_none(self):
+        # the light style is Latte, and the accent picked in Settings is teal
+        self.configure("--tool-btop")
+        text = self.home.read(self.theme)
+        self.assertTrue(text.startswith("# gattuccino: btop theme (flavor=latte, accent=teal)\n"))
+        self.assertIn(f'theme[hi_fg]="{palette.color("latte", "teal")}"', text)
+        self.assertIn('theme[main_bg]="#eff1f5"', text)                    # the flavor's own colors
+        self.assertEqual(self.home.read(self.conf), 'color_theme = "gattuccino"\n')
+
+        self.configure("--no-tool-btop")                                   # a file that was only this line
+        self.assertFalse(os.path.exists(self.theme))
+        self.assertFalse(os.path.exists(self.conf))
+
+    def test_only_the_color_theme_line_of_a_btop_conf_is_touched_and_it_is_put_back(self):
+        self.put_conf(self.CONF)
+        out = self.configure("--tool-btop")
+        self.assertIn('btop.conf had color_theme = "/home/u/.config/btop/themes/catppuccin_mocha.theme"', out)
+        self.assertEqual(self.home.read(self.conf), self.CONF.replace(
+            '"/home/u/.config/btop/themes/catppuccin_mocha.theme"', '"gattuccino"'))
+
+        # btop writes its file back with a setting changed: the theme is still asked for, and still put back
+        self.put_conf(self.home.read(self.conf).replace("truecolor = true", "truecolor = false"))
+        self.home.ok("sync")
+        self.configure("--no-tool-btop")
+        self.assertEqual(self.home.read(self.conf), self.CONF.replace("truecolor = true", "truecolor = false"))
+        self.assertFalse(os.path.exists(self.theme))
+
+    def test_a_btop_conf_without_the_line_gets_it_and_loses_it(self):
+        self.put_conf("theme_background = true\n")
+        self.configure("--tool-btop")
+        self.assertEqual(self.home.read(self.conf), 'theme_background = true\ncolor_theme = "gattuccino"\n')
+        self.configure("--no-tool-btop")
+        self.assertEqual(self.home.read(self.conf), "theme_background = true\n")
+
+    def test_it_follows_the_style_and_the_accent_and_leaves_btop_conf_alone_once_it_asks_for_the_theme(self):
+        self.put_conf(self.CONF)
+        self.configure("--tool-btop", "--flavor", "macchiato")
+        asked = self.home.read(self.conf)
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
+        self.home.set_setting(INTERFACE, "accent-color", "pink")
+        self.home.ok("sync")
+        self.assertIn("flavor=macchiato, accent=pink", self.home.read(self.theme))
+        self.assertIn('theme[main_bg]="#24273a"', self.home.read(self.theme))
+        self.assertEqual(self.home.read(self.conf), asked)
+
+    def test_a_btop_conf_that_is_a_symlink_is_never_written_through(self):
+        repository = f"{self.home.home}/dotfiles"
+        os.makedirs(repository)
+        with open(f"{repository}/btop.conf", "w") as f:
+            f.write(self.CONF)
+        os.makedirs(os.path.dirname(self.conf))
+        os.symlink(f"{repository}/btop.conf", self.conf)
+
+        out = self.configure("--tool-btop")
+        self.assertIn("is a symlink, so it is not edited", out)
+        self.assertIn('color_theme = "gattuccino"', out)                   # what to put in it
+        self.assertEqual(self.home.read(f"{repository}/btop.conf"), self.CONF)
+        self.assertTrue(os.path.islink(self.conf))
+        self.assertTrue(os.path.exists(self.theme))                        # the theme is there for it
+
+        self.configure("--no-tool-btop")
+        self.assertEqual(self.home.read(f"{repository}/btop.conf"), self.CONF)
+        self.assertFalse(os.path.exists(self.theme))
+
+    def test_uninstall_puts_the_color_theme_back(self):
+        self.put_conf(self.CONF)
+        self.configure("--tool-btop")
+        self.home.ok("uninstall")
+        self.assertEqual(self.home.read(self.conf), self.CONF)
+        self.assertFalse(os.path.exists(self.theme))

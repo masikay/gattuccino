@@ -377,13 +377,18 @@ def _remove_show_apps_icon(desktop: Desktop, state) -> bool:
 
 # --- Tools in a terminal -----------------------------------------------------
 
-def sync_tools(preferences: Preferences, desktop: Desktop, log=print) -> list:
+def sync_tools(preferences: Preferences, desktop: Desktop, log=print, state=None) -> list:
     """Theme the tools that are wanted for the flavor and accent in use, and take away
     the others'. Run by apply, by configure, and by the extension when the style or the
-    accent is changed in Settings. Returns the notes."""
+    accent is changed in Settings. Returns the notes. What a tool has to remember is in the
+    state, which apply has in hand and the others load and save."""
+    own_state = state is None
+    state = _load_state(desktop) if own_state else state
     notes = []
     tools.sync(desktop, preferences, current_flavor(preferences, desktop), current_accent(preferences, desktop),
-               notes, log)
+               notes, log, state)
+    if own_state:
+        _save_state(desktop, state)
     # The extension runs this only while there is something to do
     live.set_sync_command(desktop, SCRIPT if tools.wanted(preferences) else "")
     return notes
@@ -478,7 +483,7 @@ def apply(preferences: Preferences, desktop: Desktop, log=print):
     # Into the settings of the extensions, where they take them at once
     live.push(desktop, preferences)
     _install_launcher(desktop)
-    notes += sync_tools(preferences, desktop, log)
+    notes += sync_tools(preferences, desktop, log, state)
     # Clean up what an earlier version, under this project's old name, installed
     for uuid in (LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
@@ -502,7 +507,7 @@ def uninstall(desktop: Desktop, log=print):
     _remove_show_apps_icon(desktop, state)
     live.reset(desktop)
     _remove_launcher(desktop)
-    tools.remove_all(desktop)
+    tools.remove_all(desktop, state)
     for uuid in (FLOATING_PANEL_UUID, ACCENT_UUID, BLUR_UUID, LEGACY_FLOATING_PANEL_UUID, LEGACY_ACCENT_UUID):
         _remove_extension(desktop, uuid)
     for path in (desktop.state_path,):

@@ -186,6 +186,8 @@ SPECS = {
                             "they keep what GNOME gives them"),
     "blur_background_radius": Spec(_pixels(100), "0 to 100",
                                    "How far the blur of that wallpaper reaches, in pixels"),
+    "tool_btop": Spec(_boolean, "yes, no",
+                      "Theme btop, the resource monitor, with Catppuccin; it follows the flavor and the accent"),
     "tool_eza": Spec(_boolean, "yes, no",
                      "Theme eza, the ls replacement, with Catppuccin in its theme.yml; it follows the flavor "
                      "and the accent"),
@@ -240,7 +242,7 @@ GROUPS = (
                  "docked_panel_opacity")),
     ("Dock", ("dock_like_panel", "dock_radius", "show_apps_icon")),
     ("Blur", ("blur", "blur_radius", "blur_background", "blur_background_radius")),
-    ("Tools", ("tool_eza", "tool_fzf")),
+    ("Tools", ("tool_btop", "tool_eza", "tool_fzf")),
     ("Install", ("shell_theme", "gtk_theme", "flatpak", "shell_version")),
 )
 _CHOICES = {
@@ -319,6 +321,7 @@ class Preferences:
     blur_radius: int = 32
     blur_background: bool = True
     blur_background_radius: int = 32
+    tool_btop: bool = False
     tool_eza: bool = False
     tool_fzf: bool = False
     shell_version: str = AUTO
