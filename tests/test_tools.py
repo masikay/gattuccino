@@ -5,18 +5,22 @@ import unittest
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import eza
+from gattuccino.tools import eza, fzf
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "systemctl")
+
+
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
 
 
 def official(flavor, accent):
-    with open(eza.theme_file(flavor, accent), encoding="utf-8") as f:
-        return f.read()
+    return read(eza.theme_file(flavor, accent))
 
 
 class RegistryTest(unittest.TestCase):
@@ -31,6 +35,10 @@ class RegistryTest(unittest.TestCase):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
             for accent in palette.ACCENTS:
                 self.assertTrue(os.path.isfile(eza.theme_file(flavor, accent)), (flavor, accent))
+
+    def test_every_flavor_has_the_official_theme_of_fzf(self):
+        for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
+            self.assertTrue(os.path.isfile(fzf.theme_file(flavor)), flavor)
 
     def test_a_tool_that_is_not_there_is_not_asked_about(self):
         desktop = Desktop(environment={"HOME": "/nonexistent", "PATH": "/nonexistent"})
@@ -152,3 +160,92 @@ class EzaTest(unittest.TestCase):
         self.configure("--flavor", "frappe")
         self.home.ok("sync")
         self.assertFalse(os.path.exists(self.theme))
+
+
+class FzfTest(unittest.TestCase):
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.options = f"{self.home.config}/fzf/gattuccino.rc"
+        self.environment = f"{self.home.config}/environment.d/60-gattuccino-fzf.conf"
+        # what a person's shell has, which the notes are about
+        for name in ("FZF_DEFAULT_OPTS", "FZF_DEFAULT_OPTS_FILE"):
+            self.home.env.pop(name, None)
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def test_the_accent_is_the_prompt_and_the_pointer_and_all_the_rest_is_the_official_port(self):
+        theme = read(fzf.theme_file("mocha"))
+        changed = fzf.with_accent(theme, palette.color("mocha", "teal"))
+        self.assertEqual(changed.count("#94E2D5"), 2)
+        self.assertIn("pointer:#94E2D5", changed)
+        self.assertIn("prompt:#94E2D5", changed)
+        # nothing else is touched: the same words, but for the two colors
+        words = lambda text: sorted(w for w in text.split() if "pointer" not in w and "prompt" not in w)  # noqa: E731
+        self.assertEqual(words(theme), words(changed))
+
+    def test_the_options_file_is_the_official_theme_with_the_accent_and_environment_d_points_at_it(self):
+        # the light style is Latte, and the accent picked in Settings is teal
+        self.configure("--tool-fzf")
+        text = self.home.read(self.options)
+        self.assertTrue(text.startswith("# gattuccino: fzf theme (flavor=latte, accent=teal)\n"))
+        official = read(fzf.theme_file("latte"))
+        self.assertTrue(text.endswith(fzf.with_accent(official, palette.color("latte", "teal"))))
+
+        environment = self.home.read(self.environment)
+        self.assertTrue(environment.startswith("# gattuccino: fzf options file"))
+        self.assertIn(f"\nFZF_DEFAULT_OPTS_FILE={self.options}\n", environment)
+
+    def test_it_follows_the_style_and_the_accent_as_they_are_changed_in_settings(self):
+        self.configure("--tool-fzf", "--flavor", "macchiato")
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
+        self.home.set_setting(INTERFACE, "accent-color", "pink")
+        self.home.ok("sync")
+        text = self.home.read(self.options)
+        self.assertIn("flavor=macchiato, accent=pink", text)
+        self.assertIn(f"prompt:{palette.color('macchiato', 'pink').upper()}", text)
+        self.assertIn("bg:#24273A", text)                                  # the flavor's own colors
+
+    def test_turning_it_off_takes_both_files_away_and_leaves_the_files_of_a_person_alone(self):
+        self.configure("--tool-fzf")
+        self.configure("--no-tool-fzf")
+        self.assertFalse(os.path.exists(self.options))
+        self.assertFalse(os.path.exists(self.environment))
+
+        os.makedirs(os.path.dirname(self.environment), exist_ok=True)
+        with open(self.environment, "w") as f:
+            f.write("MINE=1\n")
+        out = self.configure("--tool-fzf")
+        self.assertIn("kept as 60-gattuccino-fzf.conf.before-gattuccino", out)
+        self.configure("--no-tool-fzf")
+        self.assertEqual(self.home.read(self.environment), "MINE=1\n")
+
+    def test_it_says_to_log_in_again_until_the_variable_is_there(self):
+        self.assertIn("log out and back in", self.configure("--tool-fzf"))
+        self.home.env["FZF_DEFAULT_OPTS_FILE"] = self.options              # after the login
+        self.assertNotIn("log out and back in", self.configure("--tool-fzf"))
+
+    def test_systemd_is_asked_to_read_the_file_again_once_it_is_written_and_once_it_is_gone(self):
+        # a user manager that was kept running (logging back in within ten seconds) never saw it
+        self.configure("--tool-fzf")
+        self.assertEqual(self.home.log().count("systemctl --user daemon-reload"), 1)
+        self.configure("--tool-fzf")                                       # as it is: nothing to ask
+        self.assertEqual(self.home.log().count("systemctl --user daemon-reload"), 1)
+        self.configure("--no-tool-fzf")
+        self.assertEqual(self.home.log().count("systemctl --user daemon-reload"), 2)
+
+    def test_it_says_when_the_colors_of_the_shell_win(self):
+        self.home.env["FZF_DEFAULT_OPTS"] = "--height=60% --color=bg+:#313244"
+        out = self.configure("--tool-fzf")
+        self.assertIn("has --color in it", out)
+        self.assertTrue(os.path.exists(self.options))                      # written all the same
+
+        self.home.env["FZF_DEFAULT_OPTS"] = "--height=60% --layout=reverse"
+        self.assertNotIn("has --color in it", self.configure("--tool-fzf"))
+
+    def test_it_says_when_fzf_is_too_old_to_read_the_file(self):
+        self.home.env["FAKE_FZF_VERSION"] = "0.57.0"
+        self.assertIn("older than 0.58", self.configure("--tool-fzf"))
+        self.home.env["FAKE_FZF_VERSION"] = "0.58.0"
+        self.assertNotIn("older than 0.58", self.configure("--tool-fzf"))

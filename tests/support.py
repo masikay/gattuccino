@@ -93,6 +93,16 @@ open(path, "w").write("\n".join(lines) + "\n")
 '''
 
 # glib-compile-schemas: all it has to do here is to leave the file that says it was done
+# systemctl --user daemon-reload, which only has to be asked for
+SYSTEMCTL = '''
+import os, sys
+with open(os.environ["FAKE_LOG"], "a") as log:
+    log.write("systemctl " + " ".join(sys.argv[1:]) + "\\n")
+'''
+
+# fzf, which says its version, as the test sets it
+FZF = 'import os\nprint(os.environ.get("FAKE_FZF_VERSION", "0.74.5") + " (test)")\n'
+
 # A tool in a terminal, which only has to be there
 TOOL = 'print("tool 1.0")\n'
 
@@ -115,7 +125,7 @@ def test_sources():
 
 
 class FakeHome:
-    def __init__(self, user_themes="user", shell_version=SHELL_VERSION, commands=("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas")):
+    def __init__(self, user_themes="user", shell_version=SHELL_VERSION, commands=("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "systemctl")):
         self.root = tempfile.mkdtemp(prefix="gattuccino-home-")
         self.home = f"{self.root}/home"
         self.bin = f"{self.root}/bin"
@@ -142,7 +152,7 @@ class FakeHome:
         open(self._files["log"], "w").close()
 
         scripts = {"gsettings": GSETTINGS, "gnome-extensions": GNOME_EXTENSIONS, "flatpak": FLATPAK, "gnome-shell": GNOME_SHELL,
-                   "glib-compile-schemas": GLIB_COMPILE_SCHEMAS}
+                   "glib-compile-schemas": GLIB_COMPILE_SCHEMAS, "fzf": FZF, "systemctl": SYSTEMCTL}
         for name in commands:
             path = f"{self.bin}/{name}"
             with open(path, "w") as f:

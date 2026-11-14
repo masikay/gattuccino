@@ -189,6 +189,9 @@ SPECS = {
     "tool_eza": Spec(_boolean, "yes, no",
                      "Theme eza, the ls replacement, with Catppuccin in its theme.yml; it follows the flavor "
                      "and the accent"),
+    "tool_fzf": Spec(_boolean, "yes, no",
+                     "Theme fzf, the fuzzy finder, with Catppuccin; it follows the flavor and the accent "
+                     "(its prompt and pointer)"),
     "shell_version": Spec(_shell_version, f"{AUTO}, or a version such as 49.2",
                           f"GNOME Shell version to build the theme for; '{AUTO}' detects it"),
 }
@@ -237,7 +240,7 @@ GROUPS = (
                  "docked_panel_opacity")),
     ("Dock", ("dock_like_panel", "dock_radius", "show_apps_icon")),
     ("Blur", ("blur", "blur_radius", "blur_background", "blur_background_radius")),
-    ("Tools", ("tool_eza",)),
+    ("Tools", ("tool_eza", "tool_fzf")),
     ("Install", ("shell_theme", "gtk_theme", "flatpak", "shell_version")),
 )
 _CHOICES = {
@@ -317,6 +320,7 @@ class Preferences:
     blur_background: bool = True
     blur_background_radius: int = 32
     tool_eza: bool = False
+    tool_fzf: bool = False
     shell_version: str = AUTO
 
     def set(self, name: str, text: str):

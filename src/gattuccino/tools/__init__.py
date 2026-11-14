@@ -108,8 +108,8 @@ def remove_managed(path: str):
 # --- The registry --------------------------------------------------------------
 
 def all_tools() -> list:
-    from . import eza
-    return [eza.Eza()]
+    from . import eza, fzf
+    return [eza.Eza(), fzf.Fzf()]
 
 
 def by_preference(name: str):
