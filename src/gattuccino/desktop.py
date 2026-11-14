@@ -25,6 +25,7 @@ class Desktop:
         self.config_dir = config
         self.themes_dir = f"{self.home}/.themes"
         self.extensions_dir = f"{data}/gnome-shell/extensions"
+        self.data_dir = data
         self.icons_dir = f"{data}/icons"
         self.applications_dir = f"{data}/applications"
         self.flatpak_overrides = f"{data}/flatpak/overrides/global"

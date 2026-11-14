@@ -1,17 +1,18 @@
 """The tools in a terminal, themed in step with the flavor and the accent, run for real in a throwaway home."""
 
+import json
 import os
 import unittest
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import btop, eza, fzf, ghostty
+from gattuccino.tools import btop, eza, fzf, ghostty, ptyxis
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "gdbus", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "gdbus", "systemctl")
 
 
 def read(path):
@@ -39,6 +40,12 @@ class RegistryTest(unittest.TestCase):
     def test_every_flavor_has_the_official_theme_of_btop(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
             self.assertTrue(os.path.isfile(btop.theme_file(flavor)), flavor)
+
+    def test_every_flavor_has_the_colors_of_the_official_port_for_ptyxis_to_take(self):
+        for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
+            colors = ptyxis.colors(flavor)
+            self.assertEqual(sorted(k for k in colors if k.startswith("color")), sorted(f"color{n}" for n in range(16)))
+            self.assertTrue({"background", "foreground", "cursor-color", "cursor-text"} <= set(colors), flavor)
 
     def test_every_flavor_has_the_official_theme_of_ghostty(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
@@ -467,3 +474,91 @@ class GhosttyTest(unittest.TestCase):
         self.assertEqual(self.home.read(self.config), self.CONFIG)
         for path in (self.include, self.light, self.dark):
             self.assertFalse(os.path.exists(path), path)
+
+
+class PtyxisTest(unittest.TestCase):
+    SCHEMA = "org.gnome.Ptyxis"
+    PROFILES = ("aaaa1111", "bbbb2222")
+
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.palette = f"{self.home.data}/org.gnome.Ptyxis/palettes/Gattuccino.palette"
+        # two profiles, with palettes of their own, as Ptyxis keeps them
+        store = json.loads(self.home.read(self.home._files["gsettings.json"]))
+        store[self.SCHEMA] = {"profile-uuids": list(self.PROFILES), "interface-style": "system"}
+        store[self.profile("aaaa1111")] = {"palette": "Catppuccin Mocha"}
+        store[self.profile("bbbb2222")] = {"palette": "Linux"}
+        self.home.write_settings(store)
+
+    def profile(self, uuid):
+        return f"org.gnome.Ptyxis.Profile:/org/gnome/Ptyxis/Profiles/{uuid}/"
+
+    def palettes(self):
+        return [self.home.settings(self.profile(uuid), "palette") for uuid in self.PROFILES]
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def test_the_palette_has_latte_for_light_and_the_dark_flavor_for_dark_and_the_accent_for_the_cursor(self):
+        self.configure("--tool-ptyxis", "--flavor", "macchiato")
+        text = self.home.read(self.palette)
+        self.assertTrue(text.startswith("# gattuccino: ptyxis palette (flavor=latte and macchiato, accent=teal)\n"))
+
+        try:   # as Ptyxis reads it
+            from gi.repository import GLib
+        except ImportError:
+            GLib = None
+        if GLib is not None:
+            keys = GLib.KeyFile()
+            keys.load_from_data(text, len(text), GLib.KeyFileFlags.NONE)
+            self.assertEqual(keys.get_string("Palette", "Name"), "Gattuccino")
+            for section, flavor in (("Light", "latte"), ("Dark", "macchiato")):
+                required = ["Foreground", "Background", *[f"Color{n}" for n in range(16)]]
+                for key in required:
+                    self.assertTrue(keys.get_string(section, key).startswith("#"), (section, key))
+                self.assertEqual(keys.get_string(section, "Cursor"), palette.color(flavor, "teal").lower())
+                self.assertEqual(keys.get_string(section, "Background"), palette.color(flavor, "base").lower())
+                self.assertEqual(keys.get_string(section, "Color1"), palette.color(flavor, "red").lower())
+
+    def test_the_profiles_are_pointed_at_it_and_get_back_what_they_had(self):
+        self.configure("--tool-ptyxis")
+        self.assertEqual(self.palettes(), ["Gattuccino", "Gattuccino"])
+        self.home.ok("sync")                                                # again: what they had is not lost
+        self.configure("--no-tool-ptyxis")
+        self.assertEqual(self.palettes(), ["Catppuccin Mocha", "Linux"])
+        self.assertFalse(os.path.exists(self.palette))
+
+    def test_a_profile_that_was_changed_to_another_palette_since_is_left_alone_when_it_is_turned_off(self):
+        self.configure("--tool-ptyxis")
+        self.home.set_setting(self.profile("bbbb2222"), "palette", "Nord")   # chosen by hand
+        self.configure("--no-tool-ptyxis")
+        self.assertEqual(self.palettes(), ["Catppuccin Mocha", "Nord"])
+
+    def test_it_follows_the_accent(self):
+        self.configure("--tool-ptyxis")
+        self.home.set_setting(INTERFACE, "accent-color", "pink")
+        self.home.ok("sync")
+        self.assertIn(f"Cursor={palette.color('latte', 'pink').lower()}", self.home.read(self.palette))
+        self.assertIn(f"Cursor={palette.color('mocha', 'pink').lower()}", self.home.read(self.palette))
+
+    def test_it_says_when_ptyxis_is_kept_in_one_style(self):
+        self.home.set_setting(self.SCHEMA, "interface-style", "dark")
+        out = self.configure("--tool-ptyxis")
+        self.assertIn("Ptyxis is set to stay dark", out)
+        self.assertIn("interface-style system", out)
+        self.home.set_setting(self.SCHEMA, "interface-style", "system")
+        self.assertNotIn("Ptyxis is set to stay", self.configure("--tool-ptyxis"))
+
+    def test_uninstall_puts_everything_back(self):
+        self.configure("--tool-ptyxis")
+        self.home.ok("uninstall")
+        self.assertEqual(self.palettes(), ["Catppuccin Mocha", "Linux"])
+        self.assertFalse(os.path.exists(self.palette))
+
+    def test_a_ptyxis_with_no_profiles_is_only_given_the_palette(self):
+        store = json.loads(self.home.read(self.home._files["gsettings.json"]))
+        del store[self.SCHEMA]
+        self.home.write_settings(store)
+        self.configure("--tool-ptyxis")
+        self.assertTrue(os.path.exists(self.palette))

@@ -110,8 +110,8 @@ def remove_managed(path: str):
 # --- The registry --------------------------------------------------------------
 
 def all_tools() -> list:
-    from . import btop, eza, fzf, ghostty
-    return [btop.Btop(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty()]
+    from . import btop, eza, fzf, ghostty, ptyxis
+    return [btop.Btop(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty(), ptyxis.Ptyxis()]
 
 
 def by_preference(name: str):
