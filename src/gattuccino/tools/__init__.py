@@ -60,6 +60,7 @@ class Tool:
 # --- Files that are this project's ---------------------------------------------
 
 XML_MARKER = "<!-- gattuccino:"
+JSON_MARKER = '"gattuccino":'
 
 
 def is_ours(path: str) -> bool:
@@ -72,7 +73,8 @@ def is_ours(path: str) -> bool:
             lines = [f.readline() for _ in range(3)]
     except OSError:
         return False
-    return lines[0].startswith(MARKER) or any(line.startswith(XML_MARKER) for line in lines[1:])
+    return (lines[0].startswith(MARKER) or any(line.startswith(XML_MARKER) for line in lines[1:])
+            or any(line.lstrip().startswith(JSON_MARKER) for line in lines[1:]))   # a JSON file's first key
 
 
 def same_content(path: str, text: str) -> bool:
@@ -146,9 +148,9 @@ def remove_managed(path: str):
 # --- The registry --------------------------------------------------------------
 
 def all_tools() -> list:
-    from . import bat, btop, eza, fzf, ghostty, gnome_text_editor, ptyxis
-    return [bat.Bat(), btop.Btop(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty(), gnome_text_editor.GnomeTextEditor(),
-            ptyxis.Ptyxis()]
+    from . import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, ptyxis
+    return [bat.Bat(), btop.Btop(), claude_code.ClaudeCode(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty(),
+            gnome_text_editor.GnomeTextEditor(), ptyxis.Ptyxis()]
 
 
 def by_preference(name: str):

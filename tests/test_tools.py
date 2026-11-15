@@ -12,13 +12,13 @@ import xml.etree.ElementTree as ElementTree
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import bat, btop, eza, fzf, ghostty, gnome_text_editor, ptyxis
+from gattuccino.tools import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, is_ours, ptyxis
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gnome-text-editor", "gdbus", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gnome-text-editor", "claude", "gdbus", "systemctl")
 
 
 def read(path):
@@ -781,3 +781,89 @@ class GnomeTextEditorTest(unittest.TestCase):
         self.assertEqual(self.scheme(), "Adwaita")
         for path in (self.light, self.dark):
             self.assertFalse(os.path.exists(path), path)
+
+
+class ClaudeCodeTest(unittest.TestCase):
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.folder = f"{self.home.home}/.claude"
+        self.theme = f"{self.folder}/themes/gattuccino.json"
+        self.settings = f"{self.folder}/settings.json"
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def put_settings(self, text):
+        os.makedirs(self.folder, exist_ok=True)
+        with open(self.settings, "w") as f:
+            f.write(text)
+
+    def theme_json(self):
+        return json.loads(self.home.read(self.theme))
+
+    def test_every_color_has_a_name_claude_code_knows_and_is_a_color_it_takes(self):
+        colors = claude_code.overrides("mocha", "teal")
+        self.assertEqual(len(colors), 72)   # all the tokens of its themes
+        for name, value in colors.items():
+            self.assertRegex(value, r"^#[0-9a-f]{6}$", name)
+
+    def test_the_accent_is_the_brand_and_the_flavor_is_the_rest(self):
+        mocha = claude_code.overrides("mocha", "teal")
+        self.assertEqual(mocha["claude"], palette.color("mocha", "teal").lower())
+        self.assertEqual(mocha["text"], palette.color("mocha", "text").lower())
+        self.assertEqual(mocha["error"], palette.color("mocha", "red").lower())
+        self.assertNotEqual(claude_code.overrides("mocha", "pink")["claude"], mocha["claude"])
+        self.assertEqual(json.loads(claude_code.theme_text("latte", "teal"))["base"], "light")
+        self.assertEqual(json.loads(claude_code.theme_text("frappe", "teal"))["base"], "dark")
+
+    def test_it_writes_the_theme_and_chooses_it_and_puts_back_what_was_chosen(self):
+        self.put_settings('{\n  "model": "sonnet",\n  "theme": "custom:catppuccin-mocha"\n}\n')
+        self.configure("--tool-claude-code")
+        theme = self.theme_json()
+        self.assertEqual((theme["name"], theme["base"]), ("Gattuccino", "light"))   # the light style is Latte
+        self.assertTrue(self.home.read(self.theme).splitlines()[1].lstrip().startswith('"gattuccino":'))
+        self.assertTrue(is_ours(self.theme))
+        self.assertEqual(json.loads(self.home.read(self.settings)),
+                         {"model": "sonnet", "theme": "custom:gattuccino"})
+
+        self.configure("--no-tool-claude-code")
+        self.assertFalse(os.path.exists(self.theme))
+        self.assertEqual(json.loads(self.home.read(self.settings)),
+                         {"model": "sonnet", "theme": "custom:catppuccin-mocha"})
+
+    def test_a_settings_file_with_no_theme_gets_none_back_and_one_that_is_not_there_is_not_left_behind(self):
+        self.configure("--tool-claude-code")
+        self.assertEqual(json.loads(self.home.read(self.settings)), {"theme": "custom:gattuccino"})
+        self.configure("--no-tool-claude-code")
+        self.assertEqual(json.loads(self.home.read(self.settings)), {})
+
+    def test_a_theme_that_was_chosen_since_is_left_as_it_is(self):
+        self.configure("--tool-claude-code")
+        self.put_settings('{"theme": "dark"}\n')
+        self.configure("--no-tool-claude-code")
+        self.assertEqual(json.loads(self.home.read(self.settings)), {"theme": "dark"})
+
+    def test_a_symlinked_or_unreadable_settings_file_is_not_written(self):
+        os.makedirs(self.folder)
+        target = f"{self.home.home}/dotfiles-settings.json"
+        with open(target, "w") as f:
+            f.write('{"theme": "dark"}\n')
+        os.symlink(target, self.settings)
+        out = self.configure("--tool-claude-code")
+        self.assertIn("is a symlink", out)
+        self.assertEqual(self.home.read(target), '{"theme": "dark"}\n')
+        self.assertTrue(os.path.islink(self.settings))
+        os.remove(self.settings)
+        self.put_settings("{ not json")
+        self.assertIn("is not a JSON object", self.configure("--tool-claude-code"))
+        self.assertEqual(self.home.read(self.settings), "{ not json")
+
+    def test_a_theme_of_the_persons_own_with_the_name_is_kept_beside_it(self):
+        os.makedirs(os.path.dirname(self.theme))
+        with open(self.theme, "w") as f:
+            f.write('{"name": "Mine", "base": "dark"}\n')
+        out = self.configure("--tool-claude-code")
+        self.assertIn("kept as gattuccino.json.before-gattuccino", out)
+        self.configure("--no-tool-claude-code")
+        self.assertEqual(self.home.read(self.theme), '{"name": "Mine", "base": "dark"}\n')

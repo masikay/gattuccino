@@ -184,6 +184,7 @@ class FakeHome:
                         FAKE_GSETTINGS=self._files["gsettings.json"], FAKE_USER_THEMES=self._files["user-themes"],
                         FAKE_KNOWN_EXTENSIONS=self._files["known-extensions"],
                         FAKE_SHELL_VERSION=self._files["shell-version"], FAKE_LOG=self._files["log"])
+        self.env.pop("CLAUDE_CONFIG_DIR", None)   # the folder of Claude Code is under the fake home
 
     def close(self):
         shutil.rmtree(self.root, ignore_errors=True)

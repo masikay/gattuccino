@@ -190,6 +190,9 @@ SPECS = {
                      "Theme bat, the cat with syntax highlighting, with Catppuccin; it follows the flavor"),
     "tool_btop": Spec(_boolean, "yes, no",
                       "Theme btop, the resource monitor, with Catppuccin; it follows the flavor and the accent"),
+    "tool_claude_code": Spec(_boolean, "yes, no",
+                             "Theme Claude Code with Catppuccin; it follows the flavor and the accent "
+                             "(its brand color), and the style of the desktop"),
     "tool_eza": Spec(_boolean, "yes, no",
                      "Theme eza, the ls replacement, with Catppuccin in its theme.yml; it follows the flavor "
                      "and the accent"),
@@ -254,7 +257,7 @@ GROUPS = (
                  "docked_panel_opacity")),
     ("Dock", ("dock_like_panel", "dock_radius", "show_apps_icon")),
     ("Blur", ("blur", "blur_radius", "blur_background", "blur_background_radius")),
-    ("Tools", ("tool_bat", "tool_btop", "tool_eza", "tool_fzf", "tool_ghostty", "tool_gnome_text_editor", "tool_ptyxis")),
+    ("Tools", ("tool_bat", "tool_btop", "tool_claude_code", "tool_eza", "tool_fzf", "tool_ghostty", "tool_gnome_text_editor", "tool_ptyxis")),
     ("Install", ("shell_theme", "gtk_theme", "flatpak", "shell_version")),
 )
 _CHOICES = {
@@ -335,6 +338,7 @@ class Preferences:
     blur_background_radius: int = 32
     tool_bat: bool = False
     tool_btop: bool = False
+    tool_claude_code: bool = False
     tool_eza: bool = False
     tool_fzf: bool = False
     tool_ghostty: bool = False
