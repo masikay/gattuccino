@@ -12,13 +12,13 @@ import xml.etree.ElementTree as ElementTree
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, is_ours, ptyxis
+from gattuccino.tools import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, is_ours, ptyxis, starship
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gnome-text-editor", "claude", "gdbus", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gnome-text-editor", "claude", "starship", "gdbus", "systemctl")
 
 
 def read(path):
@@ -867,3 +867,101 @@ class ClaudeCodeTest(unittest.TestCase):
         self.assertIn("kept as gattuccino.json.before-gattuccino", out)
         self.configure("--no-tool-claude-code")
         self.assertEqual(self.home.read(self.theme), '{"name": "Mine", "base": "dark"}\n')
+
+
+class StarshipTest(unittest.TestCase):
+    CONFIG = ('"$schema" = \'https://starship.rs/config-schema.json\'\n\nformat = """\n[$directory](fg:mauve)\\\n$character"""\n\n'
+              "palette = 'catppuccin_mocha'\n\n[directory]\nstyle = \"fg:accent\"\n\n[palettes.catppuccin_mocha]\nbase = \"#1e1e2e\"\n")
+
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.original = f"{self.home.home}/dotfiles/starship.toml"
+        os.makedirs(os.path.dirname(self.original))
+        with open(self.original, "w") as f:
+            f.write(self.CONFIG)
+        self.path = f"{self.home.config}/starship.toml"
+        self.backup = self.path + ".before-gattuccino"
+        os.makedirs(self.home.config, exist_ok=True)
+        os.symlink(self.original, self.path)
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def test_the_file_starship_reads_is_written_with_the_palette_and_the_link_is_moved_aside_not_written_through(self):
+        self.configure("--tool-starship")
+        text = self.home.read(self.path)
+        self.assertTrue(text.startswith("# gattuccino: starship configuration (flavor=latte, accent=teal)\n"))
+        table = text[text.index("[palettes.gattuccino]"):]
+        self.assertIn(f'base = "{palette.color("latte", "base").lower()}"', table)
+        self.assertIn(f'accent = "{palette.color("latte", "teal").lower()}"', table)
+        self.assertEqual(self.home.read(self.original), self.CONFIG)   # untouched
+        self.assertFalse(os.path.islink(self.path))
+        self.assertEqual(os.readlink(self.backup), self.original)      # the link, as it was
+
+    def test_turning_it_off_puts_the_link_back(self):
+        self.configure("--tool-starship")
+        self.configure("--no-tool-starship")
+        self.assertEqual(os.readlink(self.path), self.original)
+        self.assertFalse(os.path.lexists(self.backup))
+        self.assertEqual(self.home.read(self.original), self.CONFIG)
+
+    def test_the_palette_line_is_the_one_at_the_top_and_the_rest_of_the_file_is_the_persons_own(self):
+        self.configure("--tool-starship")
+        text = self.home.read(self.path)
+        self.assertEqual(text.count("palette = "), 1)
+        self.assertIn("palette = 'gattuccino'\n", text)
+        self.assertNotIn("palette = 'catppuccin_mocha'", text)
+        self.assertIn('format = """\n[$directory](fg:mauve)\\\n$character"""', text)   # a line of a string that starts with [
+        self.assertIn('[directory]\nstyle = "fg:accent"', text)
+        self.assertIn("[palettes.catppuccin_mocha]", text)
+
+    def test_a_config_with_no_palette_line_gets_one_before_the_first_table(self):
+        text = starship.make('format = "$character"\n\n[character]\nsymbol = ">"\n', "mocha", "pink", "x")
+        self.assertLess(text.index("palette = 'gattuccino'"), text.index("[character]"))
+        self.assertIn(f'accent = "{palette.color("mocha", "pink").lower()}"', text)
+
+    def test_a_table_of_the_name_that_was_in_the_file_is_replaced_not_doubled(self):
+        text = starship.make('[palettes.gattuccino]\nbase = "#000000"\n', "mocha", "pink", "x")
+        self.assertEqual(text.count("[palettes.gattuccino]"), 1)
+        self.assertNotIn("#000000", text)
+
+    def test_it_follows_the_style_and_remembers_where_the_configuration_is(self):
+        self.configure("--tool-starship", "--flavor", "frappe")
+        self.assertIn('base = "#eff1f5"', self.home.read(self.path))              # the light style is Latte
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
+        self.configure("--tool-starship", "--flavor", "frappe")                   # the link is not there any more
+        text = self.home.read(self.path)
+        self.assertIn('base = "#303446"', text.split("[palettes.gattuccino]")[1])
+        self.assertIn("(flavor=frappe,", text)
+
+    def test_the_path_that_starship_config_names_is_the_one_written_and_is_remembered(self):
+        named = f"{self.home.home}/zdot/starship.toml"
+        os.makedirs(os.path.dirname(named))
+        os.symlink(self.original, named)
+        self.home.env["STARSHIP_CONFIG"] = named
+        self.configure("--tool-starship")
+        self.assertTrue(is_ours(named))
+        del self.home.env["STARSHIP_CONFIG"]                                       # the extension has no shell
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
+        self.configure("--tool-starship")
+        self.assertIn("(flavor=mocha,", self.home.read(named))
+        self.assertTrue(os.path.islink(self.path))                                 # the other one not touched
+
+    def test_a_file_of_the_persons_own_is_kept_beside_it_and_put_back(self):
+        os.remove(self.path)
+        with open(self.path, "w") as f:
+            f.write(self.CONFIG)
+        out = self.configure("--tool-starship")
+        self.assertIn("kept as starship.toml.before-gattuccino", out)
+        self.assertEqual(self.home.read(self.backup), self.CONFIG)
+        self.configure("--tool-starship", "--flavor", "frappe")                   # made of the one kept
+        self.assertIn("palette = 'gattuccino'", self.home.read(self.path))
+        self.configure("--no-tool-starship")
+        self.assertEqual(self.home.read(self.path), self.CONFIG)
+
+    def test_with_no_configuration_there_is_a_note_and_no_file(self):
+        os.remove(self.path)
+        out = self.configure("--tool-starship")
+        self.assertIn("no configuration to make the theme of", out)
+        self.assertFalse(os.path.exists(self.path))
