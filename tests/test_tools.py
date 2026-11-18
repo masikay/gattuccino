@@ -12,13 +12,13 @@ import xml.etree.ElementTree as ElementTree
 
 from gattuccino import palette, preferences as prefs, tools
 from gattuccino.desktop import Desktop
-from gattuccino.tools import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, is_ours, ptyxis, starship
+from gattuccino.tools import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, is_ours, lazygit, ptyxis, starship
 
 from .support import FakeHome
 
 INTERFACE = "org.gnome.desktop.interface"
 ACCENT_SCHEMA = "org.gnome.shell.extensions.gattuccino-accent"
-COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gnome-text-editor", "claude", "starship", "gdbus", "systemctl")
+COMMANDS = ("gsettings", "gnome-extensions", "flatpak", "gnome-shell", "glib-compile-schemas", "eza", "fzf", "btop", "ghostty", "ptyxis", "bat", "gnome-text-editor", "claude", "starship", "lazygit", "gdbus", "systemctl")
 
 
 def read(path):
@@ -52,6 +52,11 @@ class RegistryTest(unittest.TestCase):
             colors = ptyxis.colors(flavor)
             self.assertEqual(sorted(k for k in colors if k.startswith("color")), sorted(f"color{n}" for n in range(16)))
             self.assertTrue({"background", "foreground", "cursor-color", "cursor-text"} <= set(colors), flavor)
+
+    def test_every_flavor_and_accent_has_the_official_theme_of_lazygit(self):
+        for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
+            for accent in palette.ACCENTS:
+                self.assertTrue(os.path.isfile(lazygit.theme_file(flavor, accent)), (flavor, accent))
 
     def test_every_flavor_has_the_official_theme_of_bat(self):
         for flavor in (palette.LIGHT_FLAVOR, *palette.DARK_FLAVORS):
@@ -965,3 +970,63 @@ class StarshipTest(unittest.TestCase):
         out = self.configure("--tool-starship")
         self.assertIn("no configuration to make the theme of", out)
         self.assertFalse(os.path.exists(self.path))
+
+
+class LazygitTest(unittest.TestCase):
+    def setUp(self):
+        self.home = FakeHome(commands=COMMANDS)
+        self.addCleanup(self.home.close)
+        self.folder = f"{self.home.config}/lazygit"
+        self.theme, self.config = f"{self.folder}/gattuccino.yml", f"{self.folder}/config.yml"
+        self.environment = f"{self.home.config}/environment.d/60-gattuccino-lazygit.conf"
+        self.home.env.pop("LG_CONFIG_FILE", None)
+
+    def configure(self, *args):
+        return self.home.ok("configure", "--no-shell-theme", "--no-gtk-theme", *args)
+
+    def test_the_theme_is_the_official_one_of_the_flavor_and_accent_and_the_variable_lists_it_after_the_config(self):
+        os.makedirs(self.folder)
+        with open(self.config, "w") as f:
+            f.write("gui:\n  nerdFontsVersion: '3'\n")
+        self.configure("--tool-lazygit")                                   # Latte, teal
+        text = self.home.read(self.theme)
+        self.assertTrue(text.startswith("# gattuccino: lazygit theme (flavor=latte, accent=teal)\n"))
+        self.assertTrue(text.endswith(read(lazygit.theme_file("latte", "teal"))))
+        self.assertEqual(self.home.read(self.config), "gui:\n  nerdFontsVersion: '3'\n")   # not touched
+        self.assertIn(f"\nLG_CONFIG_FILE={self.config},{self.theme}\n", self.home.read(self.environment))
+
+    def test_a_config_that_is_not_there_is_made_empty_because_lazygit_stops_for_a_file_it_is_told_of(self):
+        out = self.configure("--tool-lazygit")
+        self.assertEqual(self.home.read(self.config), "")
+        self.assertIn("was not there", out)
+
+    def test_it_follows_the_style_and_the_accent(self):
+        self.configure("--tool-lazygit", "--flavor", "macchiato")
+        self.home.set_setting(INTERFACE, "color-scheme", "prefer-dark")
+        self.home.set_setting(INTERFACE, "accent-color", "pink")
+        self.home.ok("sync")
+        self.assertTrue(self.home.read(self.theme).endswith(read(lazygit.theme_file("macchiato", "pink"))))
+
+    def test_it_says_to_log_in_again_until_the_variable_is_there_and_when_the_shell_has_another(self):
+        self.assertIn("log out and back in", self.configure("--tool-lazygit"))
+        self.home.env["LG_CONFIG_FILE"] = f"{self.config},{self.theme}"
+        self.assertNotIn("log out and back in", self.configure("--tool-lazygit"))
+        self.home.env["LG_CONFIG_FILE"] = "/mine.yml"
+        self.assertIn("'/mine.yml' in your shell", self.configure("--tool-lazygit"))
+
+    def test_a_shell_that_still_has_the_variable_does_not_find_a_file_missing_until_the_next_login(self):
+        self.configure("--tool-lazygit")
+        self.home.env["LG_CONFIG_FILE"] = f"{self.config},{self.theme}"
+        self.configure("--no-tool-lazygit")
+        self.assertTrue(os.path.exists(self.theme))                        # kept, with nothing in it
+        self.assertNotIn("activeBorderColor", self.home.read(self.theme))
+        self.assertFalse(os.path.exists(self.environment))
+        del self.home.env["LG_CONFIG_FILE"]                                # the next login
+        self.home.ok("sync")
+        self.assertFalse(os.path.exists(self.theme))
+
+    def test_turning_it_off_takes_the_files_away(self):
+        self.configure("--tool-lazygit")
+        self.configure("--no-tool-lazygit")
+        self.assertFalse(os.path.exists(self.theme))
+        self.assertFalse(os.path.exists(self.environment))

@@ -206,6 +206,9 @@ SPECS = {
         _boolean, "yes, no",
         "Theme GNOME Text Editor with Catppuccin, light and dark; it follows the flavor and the accent "
         "(its cursor and current line number)"),
+    "tool_lazygit": Spec(_boolean, "yes, no",
+                         "Theme lazygit, the terminal interface of git, with Catppuccin; it follows the flavor "
+                         "and the accent"),
     "tool_ptyxis": Spec(_boolean, "yes, no",
                         "Theme Ptyxis, the terminal of GNOME, with Catppuccin, light and dark; it follows the "
                         "flavor and the accent (its cursor)"),
@@ -260,7 +263,7 @@ GROUPS = (
                  "docked_panel_opacity")),
     ("Dock", ("dock_like_panel", "dock_radius", "show_apps_icon")),
     ("Blur", ("blur", "blur_radius", "blur_background", "blur_background_radius")),
-    ("Tools", ("tool_bat", "tool_btop", "tool_claude_code", "tool_eza", "tool_fzf", "tool_ghostty", "tool_gnome_text_editor", "tool_ptyxis", "tool_starship")),
+    ("Tools", ("tool_bat", "tool_btop", "tool_claude_code", "tool_eza", "tool_fzf", "tool_ghostty", "tool_gnome_text_editor", "tool_lazygit", "tool_ptyxis", "tool_starship")),
     ("Install", ("shell_theme", "gtk_theme", "flatpak", "shell_version")),
 )
 _CHOICES = {
@@ -346,6 +349,7 @@ class Preferences:
     tool_fzf: bool = False
     tool_ghostty: bool = False
     tool_gnome_text_editor: bool = False
+    tool_lazygit: bool = False
     tool_ptyxis: bool = False
     tool_starship: bool = False
     shell_version: str = AUTO

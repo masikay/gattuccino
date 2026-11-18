@@ -148,9 +148,9 @@ def remove_managed(path: str):
 # --- The registry --------------------------------------------------------------
 
 def all_tools() -> list:
-    from . import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, ptyxis, starship
+    from . import bat, btop, claude_code, eza, fzf, ghostty, gnome_text_editor, lazygit, ptyxis, starship
     return [bat.Bat(), btop.Btop(), claude_code.ClaudeCode(), eza.Eza(), fzf.Fzf(), ghostty.Ghostty(),
-            gnome_text_editor.GnomeTextEditor(), ptyxis.Ptyxis(), starship.Starship()]
+            gnome_text_editor.GnomeTextEditor(), lazygit.Lazygit(), ptyxis.Ptyxis(), starship.Starship()]
 
 
 def by_preference(name: str):
